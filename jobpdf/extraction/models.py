@@ -34,7 +34,11 @@ class RawBlock:
 
 @dataclass(frozen=True)
 class TextBlock:
-    """One block of text; invariant: ``full_text[start:end] == text``."""
+    """One block of text; invariant: ``full_text[start:end] == text``.
+
+    ``page`` is 0-based, the same index PyMuPDF uses, so ``doc[page]`` plus
+    ``bbox`` locates the block for highlighting without an off-by-one.
+    """
 
     text: str
     page: int | None
