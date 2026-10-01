@@ -45,6 +45,17 @@ def _text(page: pymupdf.Page, x: float, y: float, lines: list[str], *,
     return y + leading * gap
 
 
+def _spaced_items(page: pymupdf.Page, x: float, y: float, items: list[str]) -> float:
+    """Write one item per block, like sidebar skill lists with generous spacing.
+
+    Separate blocks are what a naive top-to-bottom sort interleaves with the
+    neighbouring column, so this is what the contiguity test needs.
+    """
+    for item in items:
+        y = _text(page, x, y, [item], gap=0.6)
+    return y
+
+
 def _save(doc: pymupdf.Document, name: str) -> None:
     doc.set_metadata(_METADATA)
     doc.save(FIXTURES_DIR / name, garbage=4, deflate=True, no_new_id=True)
@@ -86,7 +97,9 @@ def two_column() -> pymupdf.Document:
 
     left_x, right_x, top = 50, 310, 140
     y = _text(page, left_x, top, ["Skills"], size=HEADER, bold=True, gap=0.4)
-    y = _text(page, left_x, y, ["Python", "SQL", "Apache Airflow", "Docker", "PostgreSQL"])
+    y = _spaced_items(page, left_x, y, [
+        "Python", "SQL", "Apache Airflow", "Docker", "PostgreSQL",
+    ])
     y = _text(page, left_x, y, ["Languages"], size=HEADER, bold=True, gap=0.4)
     _text(page, left_x, y, ["Ukrainian (native)", "English (C1)"])
 
@@ -115,7 +128,7 @@ def left_sidebar() -> pymupdf.Document:
     y = _text(page, side_x, top, ["Contact"], size=HEADER, bold=True, gap=0.4)
     y = _text(page, side_x, y, ["olena.t@example.com", "+380 00 000 0000", "Kyiv, Ukraine"])
     y = _text(page, side_x, y, ["Skills"], size=HEADER, bold=True, gap=0.4)
-    _text(page, side_x, y, ["Python", "SQL", "Docker", "Kubernetes", "Terraform"])
+    _spaced_items(page, side_x, y, ["Python", "SQL", "Docker", "Kubernetes", "Terraform"])
 
     # Main column paragraphs are wider than 60% of the page on purpose.
     y = _text(page, main_x, top + 10, ["Olena Testenko"], size=NAME, bold=True, gap=0.5)
