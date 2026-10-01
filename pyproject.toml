@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "CV parsing, ESCO skill normalization and vacancy ranking"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "pymupdf>=1.28.2",
+]
 
 [dependency-groups]
 dev = ["pytest", "ruff"]
