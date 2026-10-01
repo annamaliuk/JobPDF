@@ -25,3 +25,5 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests/ mirrors jobpdf/, so same-named test files in different folders must not clash.
+addopts = "--import-mode=importlib"
