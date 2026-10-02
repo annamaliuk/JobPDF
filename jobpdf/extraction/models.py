@@ -15,6 +15,19 @@ ParseErrorReason = Literal[
     "encrypted", "corrupt", "unsupported_type", "too_large", "too_many_pages"
 ]
 BBox = tuple[float, float, float, float]
+SectionType = Literal[
+    "contact",
+    "summary",
+    "experience",
+    "education",
+    "skills",
+    "projects",
+    "certifications",
+    "languages",
+    "other",
+]
+Confidence = Literal["high", "low"]
+LabelSource = Literal["keyword", "fuzzy", "style", "fallback"]
 
 
 @dataclass(frozen=True)
@@ -70,3 +83,20 @@ class ParseError(Exception):
     def __init__(self, reason: ParseErrorReason, message: str = "") -> None:
         super().__init__(message or reason)
         self.reason: ParseErrorReason = reason
+
+
+@dataclass
+class Section:
+    """A typed run of content blocks, as produced by JM-10.
+
+    ``types`` and the confidence fields are hints for JM-11, not routing gates:
+    the extractor sees the full text, so a mislabelled section loses nothing.
+    """
+
+    types: list[SectionType]  # several for compound headings ("Education & Experience")
+    heading: str | None  # original heading text; None for the top section
+    blocks: list[TextBlock]  # content only: the heading is excluded, sub-headings are kept
+    content_start: int  # offsets into full_text
+    end: int
+    confidence: Confidence
+    label_source: LabelSource
