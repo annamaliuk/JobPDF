@@ -27,7 +27,8 @@ SectionType = Literal[
     "other",
 ]
 Confidence = Literal["high", "low"]
-LabelSource = Literal["keyword", "fuzzy", "style", "fallback"]
+# "pattern": an unlabelled block recognised by its content (email, phone, profile URL).
+LabelSource = Literal["keyword", "fuzzy", "style", "pattern", "fallback"]
 
 
 @dataclass(frozen=True)
