@@ -1,0 +1,12 @@
+{
+  "example_cv1.pdf": [
+    {"heading": "Work Experience", "types": ["experience"]},
+    {"heading": "Education & Courses", "types": ["education", "certifications"]},
+    {"heading": "Technical Skills", "types": ["skills"]}
+  ],
+  "example_cv2.docx": [
+    {"heading": "Про себе", "types": ["summary"]},
+    {"heading": "Досвід роботи", "types": ["experience"]},
+    {"heading": "My Journey", "types": ["other"]}
+  ]
+}
