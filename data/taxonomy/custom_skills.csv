@@ -43,3 +43,6 @@ jobpdf:skill/go-programming,,golang,en
 jobpdf:skill/mongodb,MongoDB,mongodb,en
 jobpdf:skill/apache-kafka,Apache Kafka,apache kafka,en
 jobpdf:skill/apache-kafka,,kafka,en
+jobpdf:skill/rust,Rust (programming language),rust,en
+jobpdf:skill/django,Django,django,en
+jobpdf:skill/redis,Redis,redis,en
