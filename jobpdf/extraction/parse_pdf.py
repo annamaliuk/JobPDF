@@ -74,10 +74,16 @@ def _open(path: Path) -> pymupdf.Document:
     return doc
 
 
-def _page_blocks(page: pymupdf.Page) -> list[RawBlock]:
-    """Turn MuPDF text blocks into RawBlocks, dropping ones that clean to nothing."""
+def _page_blocks(
+    page: pymupdf.Page, textpage: pymupdf.TextPage | None = None
+) -> list[RawBlock]:
+    """Turn MuPDF text blocks into RawBlocks, dropping ones that clean to nothing.
+
+    ``textpage`` lets the OCR fallback (JM-9) feed an OCR text layer through
+    the exact same block builder; PyMuPDF ignores ``flags`` when it is given.
+    """
     blocks: list[RawBlock] = []
-    for block in page.get_text("dict", flags=_TEXT_FLAGS)["blocks"]:
+    for block in page.get_text("dict", flags=_TEXT_FLAGS, textpage=textpage)["blocks"]:
         if block.get("type") != 0:
             continue
         raw = _to_raw_block(block, page.number)
