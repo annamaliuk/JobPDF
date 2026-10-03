@@ -294,3 +294,70 @@ def test_real_ocr_blank_page_is_unreadable(tmp_path: Path) -> None:
     with pytest.raises(ParseError) as exc:
         parse(image_only_pdf(tmp_path / "blank.pdf", 1, blank=True))
     assert exc.value.reason == "unreadable"
+
+
+# --- image uploads (.png / .jpg / .jpeg) -----------------------------------------------
+
+
+def scan_image(path: Path, dpi: int, tag_dpi: int | None = None) -> Path:
+    """A PNG/JPEG 'photo' of the English scan fixture, written to tmp_path."""
+    source = pymupdf.open(OCR_FIXTURES / "scanned_en.pdf")
+    pixmap = source[0].get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY)
+    source.close()
+    if tag_dpi is not None:
+        pixmap.set_dpi(tag_dpi, tag_dpi)
+    pixmap.save(path)
+    return path
+
+
+def test_image_page_matches_ocr_resolution(tmp_path: Path) -> None:
+    from jobpdf.extraction.ocr import OCR_DPI
+    from jobpdf.extraction.parser import image_to_pdf
+
+    image = scan_image(tmp_path / "photo.png", dpi=150, tag_dpi=72)  # misleading 72-dpi tag
+    pixmap = pymupdf.Pixmap(str(image))
+
+    page = pymupdf.open("pdf", image_to_pdf(image))[0]
+
+    assert page.rect.width == pytest.approx(pixmap.width * 72 / OCR_DPI)
+    assert page.rect.height == pytest.approx(pixmap.height * 72 / OCR_DPI)
+
+
+@pytest.mark.parametrize("name", ["cv.png", "cv.jpg", "cv.JPEG"])
+def test_image_upload_degrades_like_a_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    monkeypatch.setattr(ocr_module, "ocr_available", lambda: (False, "tesseract not installed"))
+
+    doc = parse(scan_image(tmp_path / name, dpi=100))
+
+    assert doc.source_type == "pdf"
+    assert doc.has_text_layer is False
+    assert doc.blocks == []
+    assert any("tesseract not installed" in w for w in doc.warnings)
+
+
+def test_image_upload_uses_ocr(tmp_path: Path, fake_ocr: FakeOcr) -> None:
+    # 300 dpi -> an A4-sized page, wide enough for the fake's typeset lines.
+    doc = parse(scan_image(tmp_path / "cv.png", dpi=300))
+
+    assert doc.ocr_pages == [0]
+    assert [b.text for b in doc.blocks] == FAKE_OCR_TEXT
+
+
+def test_broken_image_is_corrupt(tmp_path: Path) -> None:
+    path = tmp_path / "cv.png"
+    path.write_bytes(b"not an image at all")
+
+    with pytest.raises(ParseError) as exc:
+        parse(path)
+    assert exc.value.reason == "corrupt"
+
+
+@needs_ocr
+def test_real_ocr_image_upload(tmp_path: Path) -> None:
+    doc = parse(scan_image(tmp_path / "cv.jpg", dpi=200))
+
+    assert doc.ocr_pages == [0]
+    for word in ["experience", "python", "docker"]:
+        assert fuzzy_in(word, doc.full_text), word
