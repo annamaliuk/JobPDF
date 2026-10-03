@@ -170,6 +170,54 @@ def test_clean_short_native_page_keeps_its_text(tmp_path: Path, monkeypatch) -> 
     assert parsed.full_text.endswith("References available on request")
 
 
+def test_ocr_lines_become_separate_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Tight line spacing makes MuPDF group these into one block, like Tesseract
+    # gluing "EXPERIENCE" onto the paragraph above it.
+    lines = ["Lviv, Ukraine", "EXPERIENCE", "Backend Developer, Example Systems LLC"]
+    keep_alive: list[pymupdf.Document] = []
+
+    def tight(page: pymupdf.Page) -> pymupdf.TextPage:
+        source = pymupdf.open()
+        keep_alive.append(source)
+        source_page = source.new_page(width=page.rect.width, height=page.rect.height)
+        for i, line in enumerate(lines):
+            source_page.insert_text((60, 80 + 14 * i), line, fontsize=12)
+        textpage = source_page.get_textpage(flags=pymupdf.TEXTFLAGS_DICT)
+        assert len([b for b in textpage.extractDICT()["blocks"] if b["type"] == 0]) == 1
+        textpage.parent = weakref.proxy(page)
+        return textpage
+
+    monkeypatch.setattr(ocr_module, "ocr_available", lambda: (True, None))
+    monkeypatch.setattr(ocr_module, "ocr_textpage", tight)
+
+    doc = parse(OCR_FIXTURES / "scanned_en.pdf")
+
+    assert [b.text for b in doc.blocks] == lines
+    assert len({b.bbox for b in doc.blocks}) == 3  # each line keeps its own bbox
+    sections, _ = split_sections(doc)
+    assert any("experience" in s.types for s in sections)
+
+
+def test_short_clean_single_page_is_not_unreadable(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "short.pdf"
+    doc = pymupdf.open()
+    doc.new_page().insert_text((60, 80), "References available on request")  # < 50 chars
+    doc.save(path)
+    monkeypatch.setattr(ocr_module, "ocr_available", lambda: (True, None))
+    monkeypatch.setattr(ocr_module, "ocr_textpage", FakeOcr(["References"]))
+
+    parsed = parse(path)
+
+    assert parsed.full_text == "References available on request"
+    assert parsed.ocr_pages == []
+
+
+def test_has_clean_text() -> None:
+    assert ocr_module.has_clean_text("References")
+    assert not ocr_module.has_clean_text("   ")
+    assert not ocr_module.has_clean_text("���")
+
+
 def test_nothing_readable_after_ocr_is_unreadable(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(ocr_module, "ocr_available", lambda: (True, None))
     monkeypatch.setattr(ocr_module, "ocr_textpage", FakeOcr([]))

@@ -96,7 +96,10 @@ def _ocr_fallback(doc: pymupdf.Document, native: list[list[RawBlock]]) -> _Fallb
     for i in needs_ocr[: ocr.OCR_MAX_PAGES]:
         page = doc[i]
         try:
-            ocr_blocks = ocr.strip_style(_page_blocks(page, textpage=ocr.ocr_textpage(page)))
+            # One block per line: Tesseract tends to glue a heading onto the last
+            # line of the paragraph above it, which JM-10 could not detect.
+            textpage = ocr.ocr_textpage(page)
+            ocr_blocks = ocr.strip_style(_page_blocks(page, textpage=textpage, per_line=True))
         except Exception as exc:  # one bad page must not fail the whole CV
             result.warnings.append(f"page {i}: OCR failed ({exc}); kept native text")
             continue
@@ -113,17 +116,17 @@ def _ocr_fallback(doc: pymupdf.Document, native: list[list[RawBlock]]) -> _Fallb
         result.warnings.append(
             f"OCR limit of {ocr.OCR_MAX_PAGES} pages reached; not OCR'd (0-based): {skipped}"
         )
-    result.unreadable = not any(ocr.is_usable_text(_page_text(b)) for b in result.blocks)
+    # Unreadable means nothing clean at all, not just "under the usable bar": a
+    # short but clean one-page PDF still parses, as it did before OCR existed.
+    result.unreadable = not any(ocr.has_clean_text(_page_text(b)) for b in result.blocks)
     return result
 
 
 def _native_is_better(native_text: str, ocr_text: str) -> bool:
     from jobpdf.extraction import ocr
 
-    return (
-        ocr.non_space_chars(native_text) > 0
-        and ocr.garbage_ratio(native_text) <= ocr.MAX_GARBAGE_RATIO
-        and ocr.non_space_chars(ocr_text) <= ocr.non_space_chars(native_text)
+    return ocr.has_clean_text(native_text) and (
+        ocr.non_space_chars(ocr_text) <= ocr.non_space_chars(native_text)
     )
 
 
@@ -154,20 +157,25 @@ def _open(path: Path) -> pymupdf.Document:
 
 
 def _page_blocks(
-    page: pymupdf.Page, textpage: pymupdf.TextPage | None = None
+    page: pymupdf.Page, textpage: pymupdf.TextPage | None = None, per_line: bool = False
 ) -> list[RawBlock]:
     """Turn MuPDF text blocks into RawBlocks, dropping ones that clean to nothing.
 
     ``textpage`` lets the OCR fallback (JM-9) feed an OCR text layer through
     the exact same block builder; PyMuPDF ignores ``flags`` when it is given.
+    ``per_line`` makes each text line its own block (with its own bbox), used
+    for OCR pages, whose block grouping is unreliable.
     """
     blocks: list[RawBlock] = []
     for block in page.get_text("dict", flags=_TEXT_FLAGS, textpage=textpage)["blocks"]:
         if block.get("type") != 0:
             continue
-        raw = _to_raw_block(block, page.number)
-        if raw is not None:
-            blocks.append(raw)
+        units = [{"bbox": line["bbox"], "lines": [line]} for line in block["lines"]] \
+            if per_line else [block]
+        for unit in units:
+            raw = _to_raw_block(unit, page.number)
+            if raw is not None:
+                blocks.append(raw)
     return blocks
 
 

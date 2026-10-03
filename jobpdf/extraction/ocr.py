@@ -54,6 +54,11 @@ def non_space_chars(text: str) -> int:
     return sum(not c.isspace() for c in text)
 
 
+def has_clean_text(text: str) -> bool:
+    """Any real text at all: the bar for "unreadable", lower than is_usable_text's."""
+    return non_space_chars(text) > 0 and garbage_ratio(text) <= MAX_GARBAGE_RATIO
+
+
 def is_usable_text(text: str) -> bool:
     return (
         non_space_chars(text) >= MIN_CHARS_PER_PAGE
