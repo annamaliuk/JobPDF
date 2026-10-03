@@ -1,0 +1,6 @@
+# BuildKit reads this file for docker/Dockerfile.ocr-test only. The image needs just
+# the dependency files; sending .venv, data/ or the HF cache would take minutes.
+*
+!pyproject.toml
+!uv.lock
+!.python-version
