@@ -16,6 +16,7 @@ import numpy as np
 import psycopg
 from psycopg import sql
 
+from jobpdf.normalization.db import REPO_ROOT
 from jobpdf.normalization.db import connect as db_connect
 from jobpdf.normalization.embedder import Embedder, TextEmbedder
 from jobpdf.normalization.index_build import DEFAULT_TABLE, TAXONOMY_DIR, file_sha256
@@ -27,7 +28,9 @@ log = logging.getLogger(__name__)
 EF_SEARCH = 100
 # Several aliases of one concept often rank together; over-fetch, then dedup by concept.
 FETCH_FACTOR = 3
-DEFAULT_MANIFEST = TAXONOMY_DIR / "manifest.json"
+# Anchored to the repo, not the working directory, so the app and Airflow (which run
+# from elsewhere) check the same file the build hashed.
+DEFAULT_MANIFEST = REPO_ROOT / TAXONOMY_DIR / "manifest.json"
 TAXONOMY_CHANGED = "taxonomy changed since the index was built; rerun build_index.py"
 
 
