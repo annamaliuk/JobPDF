@@ -11,6 +11,9 @@ from pgvector.psycopg import register_vector
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = REPO_ROOT / ".env"
 SCHEMA_FILE = REPO_ROOT / "sql" / "001_taxonomy.sql"
+# psycopg waits forever by default; on Windows a closed port can time out rather
+# than refuse, which made a stopped container look like a hung test run.
+CONNECT_TIMEOUT_S = 10
 
 
 def database_url(env_file: Path = ENV_FILE) -> str | None:
@@ -38,6 +41,7 @@ def connect(url: str, **kwargs: object) -> psycopg.Connection:
     Extra keyword arguments go to ``psycopg.connect`` (tests pass ``options`` to
     pin a throwaway ``search_path``).
     """
+    kwargs.setdefault("connect_timeout", CONNECT_TIMEOUT_S)
     conn = psycopg.connect(url, **kwargs)  # type: ignore[arg-type]
     apply_extension(conn)
     register_vector(conn)
