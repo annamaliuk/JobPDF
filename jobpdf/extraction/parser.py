@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from jobpdf.extraction.models import ParsedDocument, ParseError, RawBlock, SourceType, TextBlock
@@ -12,7 +12,10 @@ from jobpdf.extraction.parse_pdf import parse_pdf
 MAX_FILE_BYTES = 20 * 1024 * 1024
 BLOCK_SEPARATOR = "\n\n"
 
-FormatResult = tuple[list[RawBlock], bool, list[str]]
+# (blocks, has_text_layer, warnings) plus, for PDFs, the 0-based OCR'd pages (JM-9).
+FormatResult = tuple[list[RawBlock], bool, list[str]] | tuple[
+    list[RawBlock], bool, list[str], list[int]
+]
 FormatParser = Callable[[Path], FormatResult]
 
 
@@ -38,8 +41,9 @@ def parse(path: str | Path) -> ParsedDocument:
     if size > MAX_FILE_BYTES:
         raise ParseError("too_large", f"File is {size} bytes; limit is {MAX_FILE_BYTES}")
 
-    raw_blocks, has_text_layer, warnings = format_parser(path)
-    return _assemble(source_type, raw_blocks, has_text_layer, warnings)
+    raw_blocks, has_text_layer, warnings, *rest = format_parser(path)
+    ocr_pages = rest[0] if rest else []
+    return _assemble(source_type, raw_blocks, has_text_layer, warnings, ocr_pages)
 
 
 def _assemble(
@@ -47,6 +51,7 @@ def _assemble(
     raw_blocks: list[RawBlock],
     has_text_layer: bool,
     warnings: list[str],
+    ocr_pages: Sequence[int] = (),
 ) -> ParsedDocument:
     """Join blocks and compute offsets in one place, shared by all formats."""
     blocks: list[TextBlock] = []
@@ -80,4 +85,5 @@ def _assemble(
         full_text=full_text,
         has_text_layer=has_text_layer,
         warnings=list(warnings),
+        ocr_pages=list(ocr_pages),
     )

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -12,10 +14,12 @@ import pymupdf
 from jobpdf.extraction.cleaning import clean_text
 from jobpdf.extraction.models import ParseError, RawBlock
 
+log = logging.getLogger(__name__)
+
 MAX_PAGES = 15
 # Below this many characters per page the PDF is almost certainly a scan.
 MIN_CHARS_PER_PAGE = 50
-NO_TEXT_LAYER_WARNING = "No text layer detected (likely a scanned PDF); OCR is out of scope."
+NO_TEXT_LAYER_WARNING = "No text layer detected (likely a scanned PDF)."
 
 # Reading-order tuning knobs (fractions are of the page width).
 # A block wider than this is "full width" and may cross a column gutter.
@@ -33,23 +37,98 @@ _BOLD_FONT_NAME = re.compile(r"bold|black|heavy", re.IGNORECASE)
 _TEXT_FLAGS = pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
 
 
-def parse_pdf(path: Path) -> tuple[list[RawBlock], bool, list[str]]:
-    """Extract text blocks from every page in reading order."""
+def parse_pdf(path: Path) -> tuple[list[RawBlock], bool, list[str], list[int]]:
+    """Extract text blocks from every page in reading order, OCR'ing unreadable pages.
+
+    Returns blocks, has_text_layer (about the ORIGINAL file, OCR doesn't change
+    it), warnings, and the 0-based indexes of pages whose text came from OCR.
+    """
     doc = _open(path)
     try:
+        native = [_page_blocks(page) for page in doc]
+        fallback = _ocr_fallback(doc, native)
         blocks: list[RawBlock] = []
-        for page in doc:
-            blocks.extend(order_blocks(_page_blocks(page), page.rect.width))
+        for page, page_blocks in zip(doc, fallback.blocks, strict=True):
+            blocks.extend(order_blocks(page_blocks, page.rect.width))
         page_count = doc.page_count
     finally:
         doc.close()
 
     warnings: list[str] = []
-    total_chars = sum(len(b.text) for b in blocks)
+    total_chars = sum(len(b.text) for page_blocks in native for b in page_blocks)
     has_text_layer = total_chars / page_count >= MIN_CHARS_PER_PAGE
     if not has_text_layer:
         warnings.append(NO_TEXT_LAYER_WARNING)
-    return blocks, has_text_layer, warnings
+    warnings.extend(fallback.warnings)
+    if fallback.unreadable:
+        raise ParseError("unreadable", "No page has usable text, even after OCR")
+    return blocks, has_text_layer, warnings, fallback.ocr_pages
+
+
+@dataclass
+class _Fallback:
+    blocks: list[list[RawBlock]]  # per page, unordered
+    ocr_pages: list[int] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    unreadable: bool = False
+
+
+def _ocr_fallback(doc: pymupdf.Document, native: list[list[RawBlock]]) -> _Fallback:
+    """Replace pages without usable native text by their OCR text (JM-9)."""
+    # Lazy import: ocr.py imports constants from this module.
+    from jobpdf.extraction import ocr
+
+    texts = [_page_text(blocks) for blocks in native]
+    result = _Fallback(blocks=list(native))
+    needs_ocr = [i for i, text in enumerate(texts) if not ocr.is_usable_text(text)]
+    if not needs_ocr:
+        return result
+
+    available, reason = ocr.ocr_available()
+    if not available:
+        # Expected on developer machines (Tesseract only in Docker/CI): info, not warning.
+        log.info("OCR unavailable (%s); pages %s keep their native text", reason, needs_ocr)
+        result.warnings.append(
+            f"OCR unavailable ({reason}); pages without usable text (0-based): {needs_ocr}"
+        )
+        return result
+
+    for i in needs_ocr[: ocr.OCR_MAX_PAGES]:
+        page = doc[i]
+        try:
+            ocr_blocks = ocr.strip_style(_page_blocks(page, textpage=ocr.ocr_textpage(page)))
+        except Exception as exc:  # one bad page must not fail the whole CV
+            result.warnings.append(f"page {i}: OCR failed ({exc}); kept native text")
+            continue
+        ocr_text = _page_text(ocr_blocks)
+        if not ocr.is_usable_text(ocr_text):
+            result.warnings.append(f"page {i}: OCR produced no usable text")
+        if _native_is_better(texts[i], ocr_text):
+            continue  # a clean but short page keeps its exact text
+        result.blocks[i] = ocr_blocks
+        result.ocr_pages.append(i)
+
+    skipped = needs_ocr[ocr.OCR_MAX_PAGES :]
+    if skipped:
+        result.warnings.append(
+            f"OCR limit of {ocr.OCR_MAX_PAGES} pages reached; not OCR'd (0-based): {skipped}"
+        )
+    result.unreadable = not any(ocr.is_usable_text(_page_text(b)) for b in result.blocks)
+    return result
+
+
+def _native_is_better(native_text: str, ocr_text: str) -> bool:
+    from jobpdf.extraction import ocr
+
+    return (
+        ocr.non_space_chars(native_text) > 0
+        and ocr.garbage_ratio(native_text) <= ocr.MAX_GARBAGE_RATIO
+        and ocr.non_space_chars(ocr_text) <= ocr.non_space_chars(native_text)
+    )
+
+
+def _page_text(blocks: list[RawBlock]) -> str:
+    return "\n".join(block.text for block in blocks)
 
 
 def _open(path: Path) -> pymupdf.Document:
