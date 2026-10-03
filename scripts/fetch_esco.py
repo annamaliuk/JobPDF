@@ -21,6 +21,7 @@ from jobpdf.normalization.esco_fetch import (
     fetch_from_dir,
     fetch_from_url,
     fetch_from_zip,
+    use_existing,
 )
 
 
@@ -32,7 +33,8 @@ def run(zip_path: Path | None, src_dir: Path | None, data_root: Path, force: boo
     elif src_dir is not None:
         result = fetch_from_dir(src_dir, dest, force=force)
     else:
-        result = fetch_from_url(dest, force=force)
+        existing = None if force else use_existing(dest)
+        result = existing or fetch_from_url(dest, force=force)
 
     state = "already up to date, skipped" if result.skipped else "written"
     print(f"ESCO {dest.name}: {len(result.files)} CSV files in {result.dest} ({state})")

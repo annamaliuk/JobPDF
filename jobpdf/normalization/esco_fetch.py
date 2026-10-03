@@ -59,6 +59,18 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def use_existing(dest: Path) -> FetchResult | None:
+    """Data already fetched (from any source) and intact, or None.
+
+    Lets build_taxonomy.py run without arguments after a one-off
+    ``fetch_esco.py --zip`` while the release URL isn't set yet.
+    """
+    marker = _read_marker(dest)
+    if marker and _files_intact(dest, marker):
+        return _result(dest, marker, skipped=True)
+    return None
+
+
 def fetch_from_url(
     dest: Path,
     url: str = ESCO_ZIP_URL,

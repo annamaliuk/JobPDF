@@ -11,6 +11,7 @@ from jobpdf.normalization.esco_fetch import (
     fetch_from_url,
     fetch_from_zip,
     sha256_file,
+    use_existing,
 )
 
 FAKE_CSV = "conceptUri,preferredLabel\nhttp://example.org/skill/1,fake skill\n"
@@ -104,3 +105,15 @@ def test_folder_source(tmp_path: Path) -> None:
 def test_url_mode_needs_url_and_checksum(tmp_path: Path) -> None:
     with pytest.raises(FetchError, match="--zip"):
         fetch_from_url(tmp_path / "out", url="", expected_sha256="")
+
+
+def test_existing_data_is_reused_without_a_source(tmp_path: Path) -> None:
+    dest = tmp_path / "out"
+    assert use_existing(dest) is None
+
+    fetch_from_zip(make_zip(tmp_path / "esco.zip"), dest, expected_sha256="")
+    reused = use_existing(dest)
+
+    assert reused is not None and reused.skipped and reused.source == "zip"
+    (dest / "skills_uk.csv").unlink()
+    assert use_existing(dest) is None
