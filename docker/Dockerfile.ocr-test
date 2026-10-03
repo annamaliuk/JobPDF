@@ -1,0 +1,22 @@
+# Test image with Tesseract for JM-9's OCR tests. Tesseract is deliberately not
+# installed on developer machines; scripts/test_ocr_docker.sh runs the tests here.
+# The repo is mounted read-only at /app at run time; only dependencies are baked in.
+FROM python:3.10-slim
+
+# Same package line the production image (JM-36) should reuse.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-ukr \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# The virtualenv lives outside /app, so it never touches the host's .venv in the mount.
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+# Only the dependency files, so code changes don't invalidate this cached layer.
+COPY pyproject.toml uv.lock .python-version ./
+RUN uv sync --frozen --no-install-project
