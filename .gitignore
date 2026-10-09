@@ -17,3 +17,8 @@ data/esco/
 data/cache/
 data/taxonomy/*
 !data/taxonomy/custom_skills.csv
+
+# JM-14 extraction evaluation: external labeled datasets (real resumes) and
+# their recordings/reports never leave the machine
+data/external/
+data/eval/
