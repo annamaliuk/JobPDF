@@ -95,6 +95,7 @@ def test_match_strings_threshold() -> None:
         ("Co-Founder (Tech)", "co founder tech"),
         ("C++ / C#", "c++ c#"),
         ("R&D Engineer", "r&d engineer"),
+        ("R&amp;D Engineer", "r&d engineer"),  # the dataset's escaped ampersand
         ("...", ""),
     ],
 )
