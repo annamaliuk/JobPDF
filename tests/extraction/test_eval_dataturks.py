@@ -8,6 +8,7 @@ from jobpdf.extraction.eval_dataturks import (
     GoldSpan,
     load_dataturks,
     mask_contacts,
+    repair_amp_shift,
     repair_span,
 )
 
@@ -44,15 +45,55 @@ def test_repair_rejects_what_does_not_match(start: int, end: int, text: str) -> 
     assert repair_span("Role: Data Analyst\nNext", start, end, text) is None
 
 
+AMP_CONTENT = "R&amp;D at Acme &amp; Co\nPython"  # annotator saw "R&D at Acme & Co\nPython"
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "text", "expected"),
+    [
+        (17, 22, "Python", (25, 31)),  # shifted by two entities
+        (7, 10, "Acme", (11, 15)),  # shifted by one
+        (0, 2, "R&D", (0, 7)),  # the span's own text holds the entity
+        (12, 15, "& Co", (16, 24)),
+        (17, 22, "Pithon", None),  # mapped window doesn't hold the text
+        (17, 40, "Python", None),  # past the end
+        (-1, 2, "R&D", None),
+    ],
+)
+def test_repair_amp_shift(start: int, end: int, text: str, expected) -> None:
+    assert repair_amp_shift(AMP_CONTENT, start, end, text) == expected
+
+
+def test_repair_amp_shift_needs_an_entity() -> None:
+    assert repair_amp_shift("R&D at Acme\nPython", 0, 1, "R&") is None
+
+
+def test_amp_shifted_spans_are_recovered(loaded, raw) -> None:
+    resumes, _, _ = loaded
+    resume = resumes[2]
+
+    def gold(label: str) -> list[str]:
+        return [resume.text[s.start : s.end] for s in resume.spans if s.label == label]
+
+    assert gold("Skills") == ["Selenium, Jira"]
+    assert gold("Graduation Year") == ["2016"]
+    assert gold("Companies worked at") == ["Test House Ltd", "Bugs &amp; Fixes"]
+    # The repaired offsets really are past the entity, not the annotator's offsets.
+    skills = next(s for s in resume.spans if s.label == "Skills")
+    raw_skills = next(a for a in raw[2]["annotation"] if a["label"] == ["Skills"])
+    assert skills.start == raw_skills["points"][0]["start"] + 4
+
+
 def test_load_counts(loaded) -> None:
     resumes, stats, _ = loaded
 
     assert [r.index for r in resumes] == [0, 1, 2, 3]
     assert stats.records == 4 and stats.invalid_records == 0
     assert stats.invalid_spans == 1  # the shifted Degree span in resume 1
+    assert stats.amp_repaired_spans == 5  # resume 2: spans at or after its "&amp;"
     assert stats.duplicate_spans == 1
     assert stats.unlabeled_annotations == 1
-    assert stats.label_counts["Designation"] == 7
+    assert stats.label_counts["Designation"] == 8
     assert stats.label_counts["Location"] == 1  # given as a plain string label
     assert stats.label_counts["UNKNOWN"] == 1
 

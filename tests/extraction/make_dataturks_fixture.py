@@ -6,7 +6,8 @@ must never be used as fixtures (they live only in gitignored data/external/).
 The fixture deliberately carries the dataset's quirks: inclusive end offsets,
 an exclusive end, whitespace-padded span text, a broken (shifted) span, a
 duplicate span, overlapping spans, a label given as a plain string, an
-annotation without a label, unlabeled contact details and a null annotation.
+annotation without a label, unlabeled contact details, a null annotation and
+offsets shifted by an "&amp;" entity.
 
 Run from the repo root:  uv run python tests/extraction/make_dataturks_fixture.py
 Output is deterministic, so re-running it on a clean checkout leaves git clean.
@@ -63,6 +64,7 @@ QA Engineer with 5 years of experience.
 
 EXPERIENCE
 QA Engineer, Test House Ltd (2017-2022)
+QA Intern, Bugs &amp; Fixes (2016)
 
 SKILLS
 Selenium, Jira
@@ -127,7 +129,9 @@ def records() -> list[dict]:
         unlabeled,
     ]
 
-    c2 = RESUME_2
+    # Like the real dataset: content holds "&amp;", but the annotator's offsets
+    # and texts were taken from the unescaped text, so later spans are shifted.
+    c2 = RESUME_2.replace("&amp;", "&")
     string_label = inclusive(c2, "Location", "Remote")
     string_label["label"] = "Location"
     ann2 = [
@@ -137,17 +141,19 @@ def records() -> list[dict]:
         inclusive(c2, "Years of Experience", "5 years"),
         inclusive(c2, "Designation", "QA Engineer", occurrence=1),
         inclusive(c2, "Companies worked at", "Test House Ltd"),
+        inclusive(c2, "Designation", "QA Intern"),
+        inclusive(c2, "Companies worked at", "Bugs & Fixes"),
         inclusive(c2, "Skills", "Selenium, Jira"),
         inclusive(c2, "Degree", "Diploma in Software Testing"),
         inclusive(c2, "College Name", "Sample College"),
-        inclusive(c2, "Graduation Year", "2016"),
+        inclusive(c2, "Graduation Year", "2016", occurrence=1),
         inclusive(c2, "UNKNOWN", "Remote"),
     ]
 
     return [
         {"content": c0, "annotation": ann0, "extras": None},
         {"content": c1, "annotation": ann1, "extras": None},
-        {"content": c2, "annotation": ann2, "extras": None},
+        {"content": RESUME_2, "annotation": ann2, "extras": None},
         {"content": RESUME_3, "annotation": None, "extras": None},
     ]
 

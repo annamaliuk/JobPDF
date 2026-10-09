@@ -135,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         "resumes_evaluated": len(per_resume),
         "invalid_records": stats.invalid_records,
         "invalid_spans": stats.invalid_spans,
+        "amp_repaired_spans": stats.amp_repaired_spans,
         "duplicate_spans": stats.duplicate_spans,
         "unlabeled_annotations": stats.unlabeled_annotations,
         "missing_recordings": missing,
@@ -187,7 +188,8 @@ def _print_summary(report: dict, out: Path) -> None:
         f"evaluated {report['resumes_evaluated']}/{report['resumes_selected']} resumes "
         f"(missing recordings {report['missing_recordings']}, "
         f"extraction errors {report['extraction_errors']}); "
-        f"invalid spans {report['invalid_spans']}"
+        f"invalid spans {report['invalid_spans']}, "
+        f"repaired &amp; shifts {report['amp_repaired_spans']}"
     )
     print(f"{'field':<16}{'precision':>10}{'recall':>8}{'f1':>8}{'tp':>6}{'fp':>6}{'fn':>6}")
     for name, m in report["fields"].items():

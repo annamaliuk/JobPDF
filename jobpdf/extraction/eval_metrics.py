@@ -14,7 +14,7 @@ from dataclasses import astuple, dataclass, field
 
 from rapidfuzz import fuzz
 
-from jobpdf.extraction.eval_dataturks import MASK_CHAR, Resume
+from jobpdf.extraction.eval_dataturks import AMP_ENTITY, MASK_CHAR, Resume
 from jobpdf.extraction.prompt import mask_pii
 from jobpdf.extraction.schema import CandidateProfile
 from jobpdf.normalization.text import normalize
@@ -224,8 +224,12 @@ def evaluate_resume(resume: Resume, profile: CandidateProfile) -> ResumeMetrics:
 
 
 def match_key(text: str) -> str:
-    """``normalize()``, minus spelling-only punctuation, separators as spaces."""
-    key = _SEPARATORS.sub(" ", normalize(text).translate(_SPELLING_ONLY))
+    """``normalize()``, minus spelling-only punctuation, separators as spaces.
+
+    The dataset's "&amp;" entity reads as "&", whichever side it appears on.
+    """
+    key = normalize(text).replace(AMP_ENTITY, "&").translate(_SPELLING_ONLY)
+    key = _SEPARATORS.sub(" ", key)
     return " ".join(key.split())
 
 
