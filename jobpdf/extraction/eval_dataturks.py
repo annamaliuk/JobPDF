@@ -5,6 +5,10 @@ The file is JSON lines: ``{"content": str, "annotation": [{"label": [str],
 inclusive. Spans become half-open ``GoldSpan``s after repair; a span that can't
 be repaired is counted and warned about, never silently dropped.
 
+Some ``content`` strings hold the HTML entity "&amp;" where the annotator saw a
+plain "&", so every "&amp;" before a span puts it 4 characters later than its
+offsets say. ``repair_amp_shift`` maps such offsets back into ``content``.
+
 These are real resumes: warnings name only the resume index, label and
 offsets, and the original names/emails live only in memory (excluded from dumps).
 """
@@ -23,6 +27,8 @@ __all__ = ["MASK_CHAR", "GoldSpan", "LoadStats", "Resume", "load_dataturks", "ma
 
 # Labels whose text is replaced by MASK_CHAR before anything reaches the LLM.
 CONTACT_LABELS = frozenset({"Name", "Email Address"})
+# The escaped ampersand that shifts annotator offsets (see module docstring).
+AMP_ENTITY = "&amp;"
 
 
 class GoldSpan(BaseModel):
@@ -46,6 +52,7 @@ class LoadStats(BaseModel):
     invalid_records: int = 0
     label_counts: dict[str, int] = Field(default_factory=dict)
     invalid_spans: int = 0
+    amp_repaired_spans: int = 0  # recovered only by repair_amp_shift
     duplicate_spans: int = 0
     unlabeled_annotations: int = 0
 
@@ -110,7 +117,12 @@ def _gold_spans(
             continue
         for point in annotation.points:
             repaired = repair_span(record.content, point.start, point.end, point.text)
+            amp_repaired = False
+            if repaired is None:
+                repaired = repair_amp_shift(record.content, point.start, point.end, point.text)
+                amp_repaired = repaired is not None
             for label in names:
+                stats.amp_repaired_spans += amp_repaired
                 labels[label] += 1
                 if repaired is None:
                     stats.invalid_spans += 1
@@ -146,6 +158,31 @@ def repair_span(content: str, start: int, end: int, text: str) -> tuple[int, int
         if window.strip() == stripped:
             lead = len(window) - len(window.lstrip())
             return s + lead, s + lead + len(stripped)
+    return None
+
+
+def repair_amp_shift(content: str, start: int, end: int, text: str) -> tuple[int, int] | None:
+    """Half-open offsets in ``content`` for offsets counted as if "&amp;" were "&".
+
+    ``start``/``end`` (inclusive) index the unescaped text. The span is accepted
+    only if the mapped window is exactly ``text``, or is ``text`` once its own
+    "&amp;" is read as "&"; anything else stays invalid.
+    """
+    if AMP_ENTITY not in content:
+        return None
+    # positions[u] = index in content of unescaped character u (plus one past the end).
+    positions: list[int] = []
+    at = 0
+    while at < len(content):
+        positions.append(at)
+        at += len(AMP_ENTITY) if content.startswith(AMP_ENTITY, at) else 1
+    positions.append(len(content))
+    if start < 0 or end < start or end + 1 >= len(positions):
+        return None
+    s, e = positions[start], positions[end + 1]
+    window = content[s:e]
+    if window == text or window.replace(AMP_ENTITY, "&") == text:
+        return s, e
     return None
 
 

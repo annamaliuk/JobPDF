@@ -50,7 +50,11 @@ RESPONSES = {
     2: {
         "summary": "Alex Example is a QA engineer",  # a leaked name
         "skills": [hard("Selenium", "Selenium, Jira"), hard("Bash", "Bash")],  # Bash: unlocated
-        "experience": [job("QA Engineer", "Test House Ltd", "QA Engineer, Test House Ltd")],
+        "experience": [
+            job("QA Engineer", "Test House Ltd", "QA Engineer, Test House Ltd"),
+            # Gold for this company is recovered by the "&amp;" repair.
+            job("QA Intern", "Bugs & Fixes", "QA Intern, Bugs &amp; Fixes"),
+        ],
         "education": [school("Sample College", "Diploma in Software Testing", "2016",
                              "Diploma in Software Testing - Sample College - 2016")],
         "languages": [],
@@ -58,7 +62,7 @@ RESPONSES = {
     },
 }
 CV_STRINGS = ["Placeholder", "example.com", "Alex Example", "Python, SQL", "Data Analyst",
-              "Selenium", "Bash", "Test House"]
+              "Selenium", "Bash", "Test House", "Bugs"]
 
 
 def reply(tool_input: dict, stop_reason: str = "tool_use") -> ToolCallResult:
@@ -100,14 +104,15 @@ def test_replay_end_to_end(tmp_path: Path, recordings: Path, capsys) -> None:
     assert (report["dataset_records"], report["resumes_selected"]) == (4, 4)
     assert (report["resumes_evaluated"], report["missing_recordings"]) == (2, 2)
     assert (report["invalid_spans"], report["duplicate_spans"]) == (1, 1)
+    assert report["amp_repaired_spans"] == 5
     assert report["extraction_errors"] == 0
     assert report["unlocated_quotes"] == 1
     assert report["contact_leaks"] == 1
     assert len(report["dataset_sha256"]) == 64
     fields = {name: (m["tp"], m["fp"], m["fn"]) for name, m in report["fields"].items()}
     assert fields == {
-        "designation": (3, 0, 0),
-        "companies": (3, 0, 0),
+        "designation": (4, 0, 0),
+        "companies": (4, 0, 0),
         "degree": (2, 0, 0),
         "college": (2, 0, 0),
         "graduation_year": (2, 0, 0),
