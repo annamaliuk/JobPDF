@@ -84,6 +84,41 @@ def test_match_strings_threshold() -> None:
     assert match_strings(["Data Analyst"], ["Data Engineer"], threshold=0) == Counts(1, 0, 0)
 
 
+@pytest.mark.parametrize(
+    ("text", "key"),
+    [
+        ("B.E.", "be"),
+        (" B.E ", "be"),
+        ("M.B.A", "mba"),
+        ("Bachelor's", "bachelors"),
+        ("Pvt. Ltd., Pune", "pvt ltd pune"),
+        ("Co-Founder (Tech)", "co founder tech"),
+        ("C++ / C#", "c++ c#"),
+        ("R&D Engineer", "r&d engineer"),
+        ("...", ""),
+    ],
+)
+def test_match_key(text: str, key: str) -> None:
+    assert eval_metrics.match_key(text) == key
+
+
+def test_spelling_variants_match() -> None:
+    assert match_strings(["B.E"], ["B.E."]) == Counts(tp=1, fp=0, fn=0)
+    assert match_strings(["M.B.A"], ["MBA"]) == Counts(tp=1, fp=0, fn=0)
+    assert match_strings(["B.Tech"], ["B. Tech"]) == Counts(tp=1, fp=0, fn=0)
+    assert match_strings(["B.E. in Computer Science"], ["B.E"]) == Counts(tp=1, fp=0, fn=0)
+    # Variants of one entity are one gold item.
+    assert match_strings(["B.E", "B.E.", "BE"], []) == Counts(tp=0, fp=0, fn=1)
+
+
+def test_punctuation_removal_keeps_different_names_apart() -> None:
+    assert match_strings(["B.Sc."], ["M.Sc."]) == Counts(tp=0, fp=1, fn=1)
+    assert match_strings(["B.E"], ["B.Tech"]) == Counts(tp=0, fp=1, fn=1)
+    assert match_strings(["B.E", "M.E"], ["B.E."]) == Counts(tp=1, fp=0, fn=1)
+    # Punctuation-only strings have no key, so they can't match anything.
+    assert match_strings(["Data Analyst"], ["...", " - "]) == Counts(tp=0, fp=0, fn=1)
+
+
 def test_counts_report() -> None:
     assert Counts(tp=2, fp=1, fn=0).as_report() == {
         "tp": 2, "fp": 1, "fn": 0, "precision": 0.6667, "recall": 1.0, "f1": 0.8,
