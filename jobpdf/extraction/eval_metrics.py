@@ -1,6 +1,7 @@
 """Metrics comparing JM-11 extraction output with DataTurks gold spans (JM-14).
 
-Text fields are compared through the shared ``normalize()`` and fuzzy-matched
+Text fields are compared through the shared ``normalize()``, with punctuation
+that only changes spelling removed ("B.E." == "B.E" == "BE"), and fuzzy-matched
 one-to-one; skills are judged by where their quotes sit in the CV. Results are
 counts only, so a report built from them never contains CV text.
 """
@@ -46,6 +47,12 @@ NOT_EVALUATED = {
     "UNKNOWN": "no corresponding field",
 }
 _YEAR = re.compile(r"(?<!\d)(?:19|20)\d\d(?!\d)")
+# Dots and apostrophes only change how an abbreviation is spelled, so they are
+# dropped: "B.E." -> "be", "M.B.A" -> "mba". Separators become spaces:
+# "Pvt. Ltd., Pune" -> "pvt ltd pune". Everything else stays ("c++", "c#", "&"),
+# so different names never collapse into the same key.
+_SPELLING_ONLY = str.maketrans("", "", ".'’")
+_SEPARATORS = re.compile(r"[,;:()\[\]{}/\\|\-–—_\"“”]+")
 
 
 @dataclass
@@ -118,9 +125,9 @@ def match_strings(
 ) -> Counts:
     """Greedy one-to-one fuzzy matching, best-scoring pairs first.
 
-    Both sides are normalized and de-duplicated by normalized text, so a gold
-    entity labeled twice, or two roles at one employer, count once. Empty
-    strings are ignored.
+    Both sides become match keys and are de-duplicated by key, so a gold
+    entity labeled twice, or two roles at one employer, count once. Strings
+    with an empty key (blank or punctuation only) are ignored.
     """
     gold_keys = _distinct(gold)
     pred_keys = _distinct(predicted)
@@ -216,8 +223,14 @@ def evaluate_resume(resume: Resume, profile: CandidateProfile) -> ResumeMetrics:
     )
 
 
+def match_key(text: str) -> str:
+    """``normalize()``, minus spelling-only punctuation, separators as spaces."""
+    key = _SEPARATORS.sub(" ", normalize(text).translate(_SPELLING_ONLY))
+    return " ".join(key.split())
+
+
 def _distinct(values: Iterable[str]) -> list[str]:
-    return list(dict.fromkeys(key for v in values if (key := normalize(v))))
+    return list(dict.fromkeys(key for v in values if (key := match_key(v))))
 
 
 def _occurrences(text: str, quote: str) -> Iterator[int]:
