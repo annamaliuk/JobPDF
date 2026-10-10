@@ -93,6 +93,7 @@ def test_load_counts(loaded) -> None:
     assert stats.amp_repaired_spans == 5  # resume 2: spans at or after its "&amp;"
     assert stats.duplicate_spans == 1
     assert stats.unlabeled_annotations == 1
+    assert stats.resumes_without_name_label == 1  # resume 3 has no annotations at all
     assert stats.label_counts["Designation"] == 8
     assert stats.label_counts["Location"] == 1  # given as a plain string label
     assert stats.label_counts["UNKNOWN"] == 1
@@ -104,6 +105,7 @@ def test_warnings_name_index_and_offsets_only(loaded) -> None:
     assert warnings == [
         "resume 1: Degree span [172, 193] does not match its text, excluded from gold",
         "resume 1: annotation without a label at [(124, 129)]",
+        "resume 3: no Name label, so its name is not masked and the leak check cannot detect it",
     ]
 
 
@@ -165,7 +167,7 @@ def test_mask_contacts_ignores_other_labels() -> None:
 
 def test_invalid_record_is_counted_not_dropped_silently(tmp_path: Path, raw) -> None:
     path = tmp_path / "data.jsonl"
-    path.write_text(json.dumps(raw[3]) + "\n{not json\n" + json.dumps({"x": 1}) + "\n",
+    path.write_text(json.dumps(raw[0]) + "\n{not json\n" + json.dumps({"x": 1}) + "\n",
                     encoding="utf-8")
 
     resumes, stats, warnings = load_dataturks(path)
