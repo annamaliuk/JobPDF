@@ -55,6 +55,8 @@ class LoadStats(BaseModel):
     amp_repaired_spans: int = 0  # recovered only by repair_amp_shift
     duplicate_spans: int = 0
     unlabeled_annotations: int = 0
+    # Their names are neither masked nor visible to the leak check.
+    resumes_without_name_label: int = 0
 
 
 class _RawPoint(BaseModel):
@@ -94,6 +96,12 @@ def load_dataturks(path: Path) -> tuple[list[Resume], LoadStats, list[str]]:
             warnings.append(f"resume {index}: record is not valid DataTurks JSON, skipped")
             continue
         spans = _gold_spans(index, record, stats, labels, warnings)
+        if not any(span.label == "Name" for span in spans):
+            stats.resumes_without_name_label += 1
+            warnings.append(
+                f"resume {index}: no Name label, so its name is not masked "
+                "and the leak check cannot detect it"
+            )
         masked, contacts = mask_contacts(record.content, spans)
         resumes.append(Resume(index=index, text=masked, spans=spans, contact_strings=contacts))
     stats.label_counts = dict(labels.most_common())

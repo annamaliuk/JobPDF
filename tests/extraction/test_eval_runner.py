@@ -105,6 +105,7 @@ def test_replay_end_to_end(tmp_path: Path, recordings: Path, capsys) -> None:
     assert (report["resumes_evaluated"], report["missing_recordings"]) == (2, 2)
     assert (report["invalid_spans"], report["duplicate_spans"]) == (1, 1)
     assert report["amp_repaired_spans"] == 5
+    assert report["resumes_without_name_label"] == 1
     assert report["extraction_errors"] == 0
     assert report["unlocated_quotes"] == 1
     assert report["contact_leaks"] == 1
