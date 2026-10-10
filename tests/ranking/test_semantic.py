@@ -373,3 +373,12 @@ def test_unusable_calibration_falls_back_to_clipped_raw(tmp_path, content) -> No
 
     assert (s.calibrated, s.warnings) == (False, [UNCALIBRATED])
     assert s.score == pytest.approx(0.5) == s.raw
+
+
+def test_committed_calibration_is_valid_provisional_and_for_the_current_model() -> None:
+    cal = load_calibration(semantic.CALIBRATION_PATH)
+
+    assert cal.is_valid and cal.provisional
+    assert cal.embedding_version == embedding_version()
+    assert cal.n_related and cal.n_unrelated and cal.dataset_sha256
+    assert semantic.CALIBRATION == cal  # loaded once at import
