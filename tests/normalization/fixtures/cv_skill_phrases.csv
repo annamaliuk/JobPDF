@@ -1,0 +1,64 @@
+raw,expected_canonical_id
+python programming,http://data.europa.eu/esco/skill/ccd0a1d9-afda-43d9-b901-96344886e14d
+writing complex SQL queries,http://data.europa.eu/esco/skill/598de5b0-5b58-4ea7-8058-a4bc4d18c742
+JavaScript (ES6+),http://data.europa.eu/esco/skill/3cd569a2-4f88-4c1e-9995-8dce8c5e51a7
+TypeScript,http://data.europa.eu/esco/skill/867137fb-ff1b-4ca3-99f3-cb6969aa2c68
+Java development,http://data.europa.eu/esco/skill/19a8293b-8e95-4de3-983f-77484079c389
+C++ programming,http://data.europa.eu/esco/skill/b633eb55-8f1f-4ae6-ab4c-2022ffe2cb7f
+C# / .NET,http://data.europa.eu/esco/skill/4c016b68-4116-468c-9dc6-42710c239e4a
+R programming,http://data.europa.eu/esco/skill/51586df8-1c46-4b47-8583-773cb63bf00b
+MATLAB,http://data.europa.eu/esco/skill/c3a03c5a-c260-4c26-9b9a-873abb396f4d
+object-oriented programming,http://data.europa.eu/esco/skill/5b9cde20-f1b9-4adc-bfb3-dbf70b14138d
+postgres db,http://data.europa.eu/esco/skill/a8d07b5a-c1a1-42c6-9d53-db9c7a2ca996
+MySQL databases,http://data.europa.eu/esco/skill/4da171e5-779c-4983-a76f-91c16751e99f
+NoSQL databases,http://data.europa.eu/esco/skill/76ef6ed3-1658-4a1a-9593-204d799c6d0c
+MS SQL Server,http://data.europa.eu/esco/skill/c062bab3-3ea0-4291-9220-a2d8fef4bead
+MongoDB,jobpdf:skill/mongodb
+Redis caching,jobpdf:skill/redis
+MS Excel,http://data.europa.eu/esco/skill/1973c966-f236-40c9-b2d4-5d71a89019be
+advanced Excel (pivot tables),http://data.europa.eu/esco/skill/1973c966-f236-40c9-b2d4-5d71a89019be
+data visualisation,http://data.europa.eu/esco/skill/65e58886-bd1e-4c5b-8ca5-8d9b353c8aa1
+Tableau dashboards,http://data.europa.eu/esco/skill/65e58886-bd1e-4c5b-8ca5-8d9b353c8aa1
+Power BI reports,http://data.europa.eu/esco/skill/65e58886-bd1e-4c5b-8ca5-8d9b353c8aa1
+machine learning models,http://data.europa.eu/esco/skill/3a2d5b45-56e4-4f5a-a55a-4a4a65afdc43
+deep learning (CNNs),http://data.europa.eu/esco/skill/ecc4552a-92c5-4222-b18d-faf5ac841080
+NLP,http://data.europa.eu/esco/skill/fff0e2cd-d0bd-4b02-9daf-158b79d9688a
+computer vision,http://data.europa.eu/esco/skill/7b0d5000-00da-4864-b776-6de49a87a669
+statistical analysis,http://data.europa.eu/esco/skill/7ee4c2ea-b349-4bd2-81a3-ec31475d4833
+data analysis,http://data.europa.eu/esco/skill/2b92a5b2-6758-4ee3-9fb4-b6387a55cc8f
+big data analytics,http://data.europa.eu/esco/skill/47a49cd6-097d-457a-9f7b-c290c14930d5
+Docker containers,jobpdf:skill/docker
+Kubernetes (k8s),jobpdf:skill/kubernetes
+AWS cloud,jobpdf:skill/amazon-web-services
+Microsoft Azure,jobpdf:skill/microsoft-azure
+Google Cloud (GCP),jobpdf:skill/google-cloud-platform
+Terraform IaC,jobpdf:skill/terraform
+Ansible automation,http://data.europa.eu/esco/skill/6f8a40d6-f9ce-43ec-a72f-d4213a53f3ed
+Jenkins CI/CD pipelines,http://data.europa.eu/esco/skill/f47a1998-0beb-43be-9f46-380aa4d183da
+Git version control,http://data.europa.eu/esco/skill/9d2e926f-53d9-41f5-98f3-19dfaa687f3f
+Linux administration,http://data.europa.eu/esco/skill/f9a6f35b-01a7-40c9-8b61-b6ee46f97272
+DevOps practices,http://data.europa.eu/esco/skill/f0de4973-0a70-4644-8fd4-3a97080476f4
+Apache Spark / PySpark,jobpdf:skill/apache-spark
+Airflow DAGs,jobpdf:skill/apache-airflow
+Kafka streaming,jobpdf:skill/apache-kafka
+dbt models,jobpdf:skill/dbt
+BigQuery,jobpdf:skill/google-bigquery
+pandas / NumPy,jobpdf:skill/pandas
+Node.js backend,jobpdf:skill/nodejs
+Django REST framework,jobpdf:skill/django
+Angular,http://data.europa.eu/esco/skill/1ffac4ac-fda7-407d-8ed1-ca8f4a8dc146
+React.js,http://data.europa.eu/esco/skill/9b9de2a4-d8af-4a7b-933a-a8334ae60067
+HTML5,http://data.europa.eu/esco/skill/0af062de-eb43-41e9-9b96-249e2cd22d26
+CSS3,http://data.europa.eu/esco/skill/e5d1f825-60ed-4bdd-872a-e748c387f777
+automated testing,http://data.europa.eu/esco/skill/6a322874-e32f-4cd8-9683-badce67a7f73
+UI design,http://data.europa.eu/esco/skill/fd33c66c-70c4-40e6-b87c-5495bd3bf26e
+Scrum,http://data.europa.eu/esco/skill/bec4359e-cb92-468f-a997-8fb28e32fba9
+Agile project management,http://data.europa.eu/esco/skill/0a9acb6b-1139-4be9-b431-3a80a959f2f4
+project management,http://data.europa.eu/esco/skill/7111b95d-0ce3-441a-9d92-4c75d05c4388
+team leadership,http://data.europa.eu/esco/skill/1f1d2ff8-c4c1-45cc-9812-6a7ee84a73cb
+managing a team of 5 engineers,http://data.europa.eu/esco/skill/cb668e89-6ef5-4ff3-ab4a-506010e7e70b
+teamwork,http://data.europa.eu/esco/skill/60c78287-22eb-4103-9c8c-28deaa460da0
+problem solving,http://data.europa.eu/esco/skill/adc6dc11-3376-467b-96c5-9b0a21edc869
+critical thinking,http://data.europa.eu/esco/skill/7dd94ad3-13d6-43fe-8b94-51fcbf67ced9
+English (C1),http://data.europa.eu/esco/skill/6d3edede-8951-4621-a835-e04323300fa0
+робота в команді,http://data.europa.eu/esco/skill/60c78287-22eb-4103-9c8c-28deaa460da0

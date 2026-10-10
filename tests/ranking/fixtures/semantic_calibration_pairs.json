@@ -1,0 +1,145 @@
+{
+  "description": "Synthetic CV-job / vacancy text pairs for calibrating JM-23's semantic score. Related or unrelated by construction; all names and companies are fictional. CV texts follow build_candidate_texts (title, company, description); vacancy texts follow build_vacancy_texts (title, responsibilities).",
+  "pairs": [
+    {
+      "id": "r01-en-data-engineer",
+      "lang": "en-en",
+      "related": true,
+      "cv_text": "Data Engineer\nAcme Widgets LLC\nBuilt nightly ETL pipelines in Python and Airflow that load sales data into the warehouse; reduced report delivery from hours to minutes.",
+      "vacancy_text": "Senior Data Engineer\nDesign and maintain batch and streaming data pipelines\nModel data in the cloud warehouse for analytics teams\nImprove reliability and freshness of reporting data"
+    },
+    {
+      "id": "r02-en-frontend",
+      "lang": "en-en",
+      "related": true,
+      "cv_text": "Frontend Developer\nBrightPixel Studio\nDeveloped responsive single-page applications in React and TypeScript and maintained the shared component library.",
+      "vacancy_text": "Frontend Engineer (React)\nBuild user interfaces for our web product in React and TypeScript\nOwn the design system components\nWork with designers on accessibility and performance"
+    },
+    {
+      "id": "r03-en-nurse",
+      "lang": "en-en",
+      "related": true,
+      "cv_text": "Registered Nurse\nGreenfield General Hospital\nProvided bedside care for post-operative patients, administered medication and monitored vital signs on a 30-bed surgical ward.",
+      "vacancy_text": "ICU Nurse\nDeliver direct patient care in the intensive care unit\nMonitor patients' vital signs and administer medication\nCoordinate care plans with physicians"
+    },
+    {
+      "id": "r04-en-accountant",
+      "lang": "en-en",
+      "related": true,
+      "cv_text": "Accountant\nNorthwind Trading\nPrepared monthly closing, reconciled bank accounts and supported the annual audit and VAT returns.",
+      "vacancy_text": "Senior Accountant\nRun the month-end close and account reconciliations\nPrepare financial statements and tax filings\nSupport external auditors"
+    },
+    {
+      "id": "r05-en-devops",
+      "lang": "en-en",
+      "related": true,
+      "cv_text": "DevOps Engineer\nCloudNine Hosting\nAutomated infrastructure with Terraform, ran Kubernetes clusters and built CI/CD pipelines with on-call monitoring.",
+      "vacancy_text": "Site Reliability Engineer\nOperate and scale our Kubernetes platform\nManage infrastructure as code\nImprove monitoring, alerting and incident response"
+    },
+    {
+      "id": "r06-en-sales",
+      "lang": "en-en",
+      "related": true,
+      "cv_text": "Sales Manager\nOrbit Office Supplies\nManaged a portfolio of business clients, negotiated contracts and exceeded quarterly revenue targets.",
+      "vacancy_text": "Account Executive\nGrow revenue from new and existing business customers\nRun negotiations and close deals\nMeet quarterly sales quotas"
+    },
+    {
+      "id": "r07-uk-data-engineer",
+      "lang": "uk-en",
+      "related": true,
+      "cv_text": "Інженер даних\nТОВ «Сонячні Системи»\nРозробляв щоденні ETL-конвеєри на Python, завантажував дані продажів у сховище даних і налаштовував звіти для аналітиків.",
+      "vacancy_text": "Data Engineer\nBuild and maintain ETL pipelines in Python\nLoad business data into the data warehouse\nSupport analysts with reliable reporting data"
+    },
+    {
+      "id": "r08-uk-accountant",
+      "lang": "uk-en",
+      "related": true,
+      "cv_text": "Бухгалтер\nПП «Добробут-Трейд»\nВела бухгалтерський облік, закривала місяць, звіряла банківські рахунки та готувала податкову звітність.",
+      "vacancy_text": "Accountant\nMaintain the general ledger and close the books each month\nReconcile bank accounts\nPrepare tax reports"
+    },
+    {
+      "id": "r09-uk-frontend",
+      "lang": "uk-en",
+      "related": true,
+      "cv_text": "Frontend-розробник\nСтудія «Піксель»\nСтворював інтерфейси вебзастосунків на React і TypeScript, підтримував бібліотеку компонентів.",
+      "vacancy_text": "Frontend Developer\nDevelop web application interfaces with React and TypeScript\nMaintain reusable UI components"
+    },
+    {
+      "id": "r10-uk-teacher",
+      "lang": "uk-en",
+      "related": true,
+      "cv_text": "Викладач англійської мови\nМовна школа «Глобус»\nПроводила групові та індивідуальні уроки англійської для дорослих, готувала студентів до іспитів IELTS.",
+      "vacancy_text": "English Teacher\nTeach English lessons to adult groups and individuals\nPrepare students for IELTS exams\nPlan lessons and track student progress"
+    },
+    {
+      "id": "u01-en-data-vs-chef",
+      "lang": "en-en",
+      "related": false,
+      "cv_text": "Data Engineer\nAcme Widgets LLC\nBuilt nightly ETL pipelines in Python and Airflow that load sales data into the warehouse; reduced report delivery from hours to minutes.",
+      "vacancy_text": "Pastry Chef\nPrepare cakes, pastries and desserts for the restaurant\nManage the pastry section and stock\nKeep the kitchen clean and food-safe"
+    },
+    {
+      "id": "u02-en-nurse-vs-go",
+      "lang": "en-en",
+      "related": false,
+      "cv_text": "Registered Nurse\nGreenfield General Hospital\nProvided bedside care for post-operative patients, administered medication and monitored vital signs on a 30-bed surgical ward.",
+      "vacancy_text": "Backend Developer (Go)\nBuild microservices and REST APIs in Go\nDesign database schemas in PostgreSQL\nWrite automated tests"
+    },
+    {
+      "id": "u03-en-driver-vs-ux",
+      "lang": "en-en",
+      "related": false,
+      "cv_text": "Truck Driver\nSwiftRoad Logistics\nDelivered freight across regional routes, completed vehicle inspections and kept accurate driving logs.",
+      "vacancy_text": "UX Designer\nResearch user needs and design wireframes and prototypes\nRun usability tests\nWork with product managers and engineers"
+    },
+    {
+      "id": "u04-en-accountant-vs-ios",
+      "lang": "en-en",
+      "related": false,
+      "cv_text": "Accountant\nNorthwind Trading\nPrepared monthly closing, reconciled bank accounts and supported the annual audit and VAT returns.",
+      "vacancy_text": "iOS Developer\nBuild native iPhone apps in Swift\nIntegrate REST APIs\nPublish releases to the App Store"
+    },
+    {
+      "id": "u05-en-barista-vs-ml",
+      "lang": "en-en",
+      "related": false,
+      "cv_text": "Barista\nCorner Cafe\nPrepared espresso drinks, served customers at the counter and kept the coffee bar clean.",
+      "vacancy_text": "Machine Learning Engineer\nTrain and deploy machine learning models\nBuild feature pipelines\nMonitor model quality in production"
+    },
+    {
+      "id": "u06-en-teacher-vs-electrician",
+      "lang": "en-en",
+      "related": false,
+      "cv_text": "English Teacher\nGlobe Language School\nTaught English to adult groups, planned lessons and prepared students for IELTS exams.",
+      "vacancy_text": "Electrician\nInstall and repair electrical wiring in buildings\nRead technical drawings\nFollow electrical safety regulations"
+    },
+    {
+      "id": "u07-uk-data-vs-housekeeper",
+      "lang": "uk-en",
+      "related": false,
+      "cv_text": "Інженер даних\nТОВ «Сонячні Системи»\nРозробляв щоденні ETL-конвеєри на Python, завантажував дані продажів у сховище даних і налаштовував звіти для аналітиків.",
+      "vacancy_text": "Hotel Housekeeper\nClean and prepare guest rooms\nChange linen and restock supplies\nReport maintenance issues"
+    },
+    {
+      "id": "u08-uk-accountant-vs-welder",
+      "lang": "uk-en",
+      "related": false,
+      "cv_text": "Бухгалтер\nПП «Добробут-Трейд»\nВела бухгалтерський облік, закривала місяць, звіряла банківські рахунки та готувала податкову звітність.",
+      "vacancy_text": "Welder\nWeld steel structures using MIG and TIG\nRead blueprints and measure parts\nInspect welds for quality"
+    },
+    {
+      "id": "u09-uk-driver-vs-datascience",
+      "lang": "uk-en",
+      "related": false,
+      "cv_text": "Водій вантажівки\nТОВ «Швидка Доставка»\nПеревозив вантажі регіональними маршрутами, проводив огляд транспортного засобу та вів журнал рейсів.",
+      "vacancy_text": "Data Scientist\nBuild statistical models and run experiments\nAnalyse product data in Python and SQL\nPresent insights to stakeholders"
+    },
+    {
+      "id": "u10-uk-cook-vs-security",
+      "lang": "uk-en",
+      "related": false,
+      "cv_text": "Кухар\nРесторан «Смачна Хата»\nГотував страви української кухні, контролював запаси продуктів і дотримувався санітарних норм.",
+      "vacancy_text": "Cloud Security Engineer\nSecure cloud infrastructure and identity access\nRun vulnerability scans and fix findings\nRespond to security incidents"
+    }
+  ]
+}

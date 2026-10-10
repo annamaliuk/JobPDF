@@ -1,0 +1,22 @@
+{
+  "floor": 0.7842,
+  "ceil": 0.8858,
+  "provisional": true,
+  "model": "intfloat/multilingual-e5-small@614241f622f53c4eeff9890bdc4f31cfecc418b3",
+  "embedding_version": "intfloat/multilingual-e5-small@614241f622f53c4eeff9890bdc4f31cfecc418b3|query: ",
+  "dataset": "tests/ranking/fixtures/semantic_calibration_pairs.json",
+  "dataset_sha256": "530617078d0a8056610de795e0ff55ccc9501d61c83b8ddbdc707d3084f7de0a",
+  "measured_at": "2026-10-10T18:34:00+00:00",
+  "n_related": 10,
+  "n_unrelated": 10,
+  "related_range": {
+    "min": 0.8293,
+    "median": 0.8858,
+    "max": 0.9001
+  },
+  "unrelated_range": {
+    "min": 0.7648,
+    "median": 0.7842,
+    "max": 0.8084
+  }
+}

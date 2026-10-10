@@ -1,0 +1,20 @@
+conceptType,conceptUri,skillType,reuseLevel,preferredLabel,altLabels,hiddenLabels,status,modifiedDate,scopeNote,definition,inScheme,description
+KnowledgeSkillCompetence,http://example.org/esco/skill/python,knowledge,cross-sector,Python (computer programming),"Python 3K
+Python",,released,2023-01-10T10:00:00.000Z,,,http://example.org/esco/scheme,"Fake description of a programming language,
+spanning two lines."
+KnowledgeSkillCompetence,http://example.org/esco/skill/ruby,knowledge,cross-sector,Ruby (computer programming),,,released,2023-01-10T10:00:00.000Z,,,http://example.org/esco/scheme,Fake Ruby description.
+KnowledgeSkillCompetence,http://example.org/esco/skill/go-lang,knowledge,cross-sector,Go (computer programming),,,released,2023-01-10T10:00:00.000Z,,,http://example.org/esco/scheme,Fake Go language description.
+KnowledgeSkillCompetence,http://example.org/esco/skill/go-game,skill/competence,transversal,Go (board game),,,released,2023-01-10T10:00:00.000Z,,,http://example.org/esco/scheme,Fake board game description.
+KnowledgeSkillCompetence,http://example.org/esco/skill/spark-ada,knowledge,sector-specific,SPARK,SPARK Ada,,released,2023-01-10T10:00:00.000Z,,,http://example.org/esco/scheme,Fake Ada-based language.
+KnowledgeSkillCompetence,http://example.org/esco/skill/spark-data,knowledge,sector-specific,Spark (data processing),,,released,2023-01-10T10:00:00.000Z,,,http://example.org/esco/scheme,Fake data processing engine.
+KnowledgeSkillCompetence,http://example.org/esco/skill/sql,knowledge,cross-sector,SQL,"Structured Query Language
+SEQUEL
+Subquery",sql queries,released,2023-02-01T09:00:00.000Z,,,http://example.org/esco/scheme,Fake query language description.
+KnowledgeSkillCompetence,http://example.org/esco/skill/sql,knowledge,cross-sector,SQL,"Structured Query Language
+OUTDATED LABEL",,released,2022-05-01T09:00:00.000Z,,,http://example.org/esco/scheme,Older duplicate row.
+KnowledgeSkillCompetence,http://example.org/esco/skill/r,knowledge,cross-sector,R,R language,,released,2023-01-10T10:00:00.000Z,,,http://example.org/esco/scheme,Fake statistics language.
+KnowledgeSkillCompetence,http://example.org/esco/skill/teamwork,skill/competence,transversal,work in teams,"teamwork
+collaborate with colleagues",,released,2023-01-10T10:00:00.000Z,,,http://example.org/esco/scheme,Fake teamwork description.
+KnowledgeSkillCompetence,http://example.org/esco/skill/ict-safety,,,ICT safety,,,released,2023-01-10T10:00:00.000Z,,,http://example.org/esco/scheme,Fake DigComp area without type.
+KnowledgeSkillCompetence,http://example.org/esco/skill/fax,skill/competence,sector-specific,operate fax machines,send faxes,,obsolete,2019-01-01T00:00:00.000Z,,,http://example.org/esco/scheme,Obsolete concept.
+SkillGroup,http://example.org/esco/group/programming,,,programming languages,,,released,2023-01-10T10:00:00.000Z,,,http://example.org/esco/scheme,"A group, not a skill."
