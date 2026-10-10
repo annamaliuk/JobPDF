@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from jobpdf.extraction.schema import ExtractedJob, ExtractedProfile, SkillMention
+from jobpdf.normalization.embedder import shared_embedder
 from jobpdf.ranking import semantic
 from jobpdf.ranking.models import VacancyFeatures
 from jobpdf.ranking.semantic import (
@@ -382,3 +383,9 @@ def test_committed_calibration_is_valid_provisional_and_for_the_current_model() 
     assert cal.embedding_version == embedding_version()
     assert cal.n_related and cal.n_unrelated and cal.dataset_sha256
     assert semantic.CALIBRATION == cal  # loaded once at import
+
+
+def test_default_embedder_is_the_one_shared_with_the_skill_index() -> None:
+    # One e5 model per process: semantic scoring (JM-23) and the index (JM-20) share it.
+    assert semantic.default_embedder() is shared_embedder()
+    assert semantic.default_embedder() is semantic.default_embedder()

@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 import logging
 import math
-import threading
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -29,6 +28,7 @@ from jobpdf.normalization.embedder import (
     QUERY_PREFIX,
     Embedder,
     TextEmbedder,
+    shared_embedder,
 )
 from jobpdf.ranking.models import VacancyFeatures
 
@@ -200,18 +200,10 @@ def _add(warnings: list[str], code: str) -> None:
 
 # --- embedding ---------------------------------------------------------------------
 
-_default_embedder: Embedder | None = None
-_default_lock = threading.Lock()
-
-
 def default_embedder() -> Embedder:
-    """One shared JM-17 Embedder for this module (the model loads on first use)."""
-    global _default_embedder
-    if _default_embedder is None:
-        with _default_lock:
-            if _default_embedder is None:
-                _default_embedder = Embedder()
-    return _default_embedder
+    """The process-wide e5 Embedder, the same instance the skill index (JM-20) uses,
+    so the model is loaded and held in memory only once."""
+    return shared_embedder()
 
 
 def embedding_version(embedder: TextEmbedder | None = None) -> str:
