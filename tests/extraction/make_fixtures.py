@@ -9,9 +9,15 @@ Output is deterministic, so re-running it on a clean checkout leaves git clean.
 
 from __future__ import annotations
 
+import io
+import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
+import docx
 import pymupdf
+from docx.oxml import parse_xml
+from docx.shared import Pt
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -24,6 +30,19 @@ _METADATA = {
     "creationDate": "D:20260101000000Z",
     "modDate": "D:20260101000000Z",
 }
+
+_FIXED_TIME = datetime(2026, 1, 1, tzinfo=timezone.utc)
+_ZIP_TIME = (2026, 1, 1, 0, 0, 0)
+
+# A legacy VML floating text box. Its text must NOT reach full_text; the parser
+# only warns about it.
+_TEXT_BOX_RUN = (
+    '<w:r xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    ' xmlns:v="urn:schemas-microsoft-com:vml">'
+    '<w:pict><v:shape style="width:200pt;height:40pt"><v:textbox><w:txbxContent>'
+    "<w:p><w:r><w:t>Floating note text</w:t></w:r></w:p>"
+    "</w:txbxContent></v:textbox></v:shape></w:pict></w:r>"
+)
 
 BODY = 10.0
 HEADER = 14.0
@@ -161,12 +180,67 @@ def image_only() -> pymupdf.Document:
     return doc
 
 
+def table_cv() -> docx.document.Document:
+    """A CV built from tables, with contact details in the page header."""
+    doc = docx.Document()
+    props = doc.core_properties
+    props.author = props.last_modified_by = "JobPDF test suite"
+    props.title = "Synthetic CV fixture"
+    props.created = props.modified = _FIXED_TIME
+    props.revision = 1
+
+    header = doc.sections[0].header
+    header.is_linked_to_previous = False
+    name = header.paragraphs[0]
+    name_run = name.add_run("Olena Testenko")
+    name_run.bold = True
+    name_run.font.size = Pt(20)
+    header.add_paragraph("olena.testenko@example.com | +380 00 000 0000 | Kyiv, Ukraine")
+
+    doc.add_heading("Experience", level=1)
+    jobs = doc.add_table(rows=3, cols=2)
+    rows = [
+        ("2021-2024", "Data Engineer", "Acme Widgets LLC"),
+        ("2019-2021", "Junior Analyst", "Globex Testing Co"),
+    ]
+    for row, (dates, title, company) in zip(list(jobs.rows)[:2], rows, strict=True):
+        row.cells[0].text = dates
+        title_paragraph = row.cells[1].paragraphs[0]
+        title_paragraph.add_run(title).bold = True
+        row.cells[1].add_paragraph(company)
+    merged = jobs.rows[2].cells[0].merge(jobs.rows[2].cells[1])
+    merged.text = "Selected project: internal reporting portal"
+
+    doc.add_heading("Education", level=1)
+    education = doc.add_table(rows=1, cols=2)
+    education.rows[0].cells[0].text = "2015-2019"
+    education.rows[0].cells[1].text = "BSc Computer Science, Example State University"
+
+    doc.add_heading("Skills", level=1)
+    skills = doc.add_paragraph("Python, SQL, Docker")
+    skills._p.append(parse_xml(_TEXT_BOX_RUN))
+    return doc
+
+
+def _save_docx(doc: docx.document.Document, name: str) -> None:
+    """Save with fixed zip timestamps; python-docx stamps entries with 'now'."""
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    with zipfile.ZipFile(buffer) as src, zipfile.ZipFile(FIXTURES_DIR / name, "w") as dst:
+        for item in src.infolist():
+            info = zipfile.ZipInfo(item.filename, date_time=_ZIP_TIME)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            dst.writestr(info, src.read(item.filename))
+
+
 def main() -> None:
     FIXTURES_DIR.mkdir(exist_ok=True)
     _save(single_column(), "single_column.pdf")
     _save(two_column(), "two_column.pdf")
     _save(left_sidebar(), "left_sidebar.pdf")
     _save(image_only(), "image_only.pdf")
+    _save_docx(table_cv(), "table_cv.docx")
     (FIXTURES_DIR / "corrupt.pdf").write_bytes(b"not a pdf\x00\xff\x13 garbage\n")
     print(f"Fixtures written to {FIXTURES_DIR}")
 

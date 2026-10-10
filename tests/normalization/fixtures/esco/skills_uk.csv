@@ -1,0 +1,5 @@
+conceptType,conceptUri,skillType,reuseLevel,preferredLabel,altLabels,hiddenLabels,status,modifiedDate,scopeNote,definition,inScheme,description
+KnowledgeSkillCompetence,http://example.org/esco/skill/python,knowledge,cross-sector,Python (комп’ютерне програмування),,,released,2023-01-10T10:00:00.000Z,,,http://example.org/esco/scheme,Вигаданий опис мови програмування.
+KnowledgeSkillCompetence,http://example.org/esco/skill/sql,knowledge,cross-sector,SQL,,,released,2023-02-01T09:00:00.000Z,,,http://example.org/esco/scheme,Вигаданий опис мови запитів.
+KnowledgeSkillCompetence,http://example.org/esco/skill/teamwork,skill/competence,transversal,працювати в команді,,,released,2023-01-10T10:00:00.000Z,,,http://example.org/esco/scheme,Вигаданий опис командної роботи.
+KnowledgeSkillCompetence,http://example.org/esco/skill/not-in-english,knowledge,cross-sector,невідома навичка,,,released,2023-01-10T10:00:00.000Z,,,http://example.org/esco/scheme,Рядок без англійського відповідника.
