@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None, embedder: Embedder | None = None) -> int
         "model": f"{MODEL_NAME}@{MODEL_REVISION}",
         "embedding_version": embedding_version(embedder),
         "dataset": _display_path(args.pairs),
-        "dataset_sha256": hashlib.sha256(raw).hexdigest(),
+        "dataset_sha256": dataset_sha256(raw),
         "measured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "n_related": len(related),
         "n_unrelated": len(unrelated),
@@ -82,6 +82,11 @@ def main(argv: list[str] | None = None, embedder: Embedder | None = None) -> int
         print("WARNING: ceil <= floor; the score falls back to uncalibrated until re-measured")
     print(f"written to {_display_path(args.out)}")
     return 0
+
+
+def dataset_sha256(raw: bytes) -> str:
+    """Hash with LF line endings, so a Windows checkout (autocrlf) hashes the same."""
+    return hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
 
 
 def _summary(values: list[float]) -> dict[str, float]:
