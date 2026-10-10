@@ -1,8 +1,13 @@
+import datetime as dt
+import json
 import random
 import unicodedata
+from pathlib import Path
 
 import pytest
 
+from jobpdf.extraction import parse
+from jobpdf.extraction.extract import extract_profile
 from jobpdf.extraction.grounding import (
     _CHAR_MAP,
     FUZZY_MIN_SCORE,
@@ -16,10 +21,12 @@ from jobpdf.extraction.grounding import (
     ground,
     normalize_with_map,
 )
+from jobpdf.extraction.llm import FakeToolCaller, ToolCallResult
 from jobpdf.extraction.models import ParsedDocument, RawBlock, Section
 from jobpdf.extraction.parser import _assemble
 from jobpdf.extraction.prompt import MASK_CHAR, mask_pii
-from jobpdf.extraction.schema import CandidateProfile, ExtractedJob, Skill
+from jobpdf.extraction.schema import CandidateProfile, ExtractedJob, ExtractedProfile, Skill
+from jobpdf.extraction.sections import split_sections
 
 S = GroundingStatus
 
@@ -364,3 +371,91 @@ def test_randomized_breaks_map_back_to_the_right_characters() -> None:
         for i, ch in enumerate(normalized):
             if ch != " ":
                 assert original[index_map[i]] == ch
+
+
+# --- end to end: parse/assemble -> split_sections -> extract_profile -> ground ---
+
+GOLD_DIR = Path(__file__).parent / "fixtures"
+GOLD_SOURCES = {
+    "single_column": "single_column.pdf",
+    "two_column": "two_column.pdf",
+    "table_cv": "table_cv.docx",
+    "left_sidebar": "left_sidebar.pdf",
+}
+
+
+def test_end_to_end_with_a_fake_extraction(tmp_path: Path) -> None:
+    doc = make_doc(
+        "Jane Doe",
+        "jane.doe@example.com | +380 44 123 4567",
+        "SUMMARY",
+        "Backend developer.",
+        "EXPERIENCE",
+        "Senior Python Developer, Globex LLC\n2021 - present\nBuilt payment\n"
+        "services with Python and PostgreSQL.",
+        "SKILLS",
+        "Python, PostgreSQL, Docker",
+        "CERTIFICATIONS",
+        "AWS Certified Developer – Associate, 2022",
+    )
+    sections, _ = split_sections(doc)
+    tool_input = {
+        "summary": "Backend developer.",
+        "skills": [
+            {"name": "Python", "kind": "hard", "found_in": "experience",
+             "quote": "Python and PostgreSQL"},
+            {"name": "Python", "kind": "hard", "found_in": "skills_list",
+             "quote": "Python, PostgreSQL, Docker"},
+            {"name": "PostgreSQL", "kind": "hard", "found_in": "experience",
+             "quote": "Built payment services with Python and PostgreSQL"},
+        ],
+        "experience": [{
+            "title": "Senior Python Developer", "company": "Globex LLC", "location": None,
+            "start": "2021", "end": "present", "description": None,
+            "skills_used": ["Python", "PostgreSQL"],
+            "quote": "Senior Python Developer, Globex LLC",
+        }],
+        "education": [],
+        "languages": [],
+        "certifications": [
+            {"name": "AWS Certified Developer", "issuer": "AWS", "year": "2022",
+             "quote": "AWS Certified Developer - Associate, 2022"},
+            {"name": "Professional Data Engineer", "issuer": "Google", "year": "2023",
+             "quote": "Google Cloud Professional Data Engineer, 2023"},
+        ],
+    }
+    caller = FakeToolCaller([ToolCallResult(
+        tool_input=tool_input, stop_reason="tool_use", input_tokens=1, output_tokens=1,
+        model="fake-model",
+    )])
+    extraction = extract_profile(doc, sections, caller, cache_dir=tmp_path,
+                                 today=dt.date(2026, 10, 10))
+    masked, _ = mask_pii(doc.full_text)
+
+    result = run(extraction.profile, doc, sections, searched_text=masked)
+
+    statuses = {g.path: g.status for g in result.groundings}
+    assert statuses == {
+        "skills[0].quotes[0]": S.EXACT,
+        "skills[0].quotes[1]": S.EXACT,
+        "skills[1].quotes[0]": S.NORMALIZED,
+        "experience[0]": S.EXACT,
+        "certifications[0]": S.NORMALIZED,
+        "certifications[1]": S.UNGROUNDED,
+    }
+    assert [w.model_dump() for w in result.warnings] == [
+        {"code": WARNING_UNGROUNDED, "path": "certifications[1]"}
+    ]
+
+
+@pytest.mark.parametrize("name", GOLD_SOURCES)
+def test_gold_extractions_ground_without_fuzzy_or_ungrounded_quotes(name: str) -> None:
+    doc = parse(GOLD_DIR / GOLD_SOURCES[name])
+    sections, _ = split_sections(doc)
+    gold = json.loads((GOLD_DIR / "gold" / f"{name}.json").read_text(encoding="utf-8"))
+
+    result = run(ExtractedProfile.model_validate(gold), doc, sections,
+                 searched_text=mask_pii(doc.full_text)[0])
+
+    assert result.groundings
+    assert result.counts[S.FUZZY] == result.counts[S.UNGROUNDED] == 0
