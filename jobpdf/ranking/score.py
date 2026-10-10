@@ -10,13 +10,27 @@ adjustments (hide or cap the band, for eligibility checks) and a replaceable
 
 from __future__ import annotations
 
+import logging
 import math
+import time
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from jobpdf.ranking.overlap import SkillOverlap
+from jobpdf.ranking.models import RANKING_VERSION, CandidateSkills, VacancyFeatures
+from jobpdf.ranking.overlap import SkillOverlap, skill_overlap
+from jobpdf.ranking.semantic import (
+    Calibration,
+    CandidateVectors,
+    SemanticScore,
+    semantic_scores,
+)
+
+log = logging.getLogger(__name__)
 
 # Weights and thresholds are provisional; JM-26 tunes them on JM-25's dataset.
 W_SKILL = 0.7
@@ -148,3 +162,144 @@ def assign_band(
     if cap is not None and BAND_ORDER[cap] > BAND_ORDER[band]:
         return cap, band
     return band, band
+
+
+# --- ranking -----------------------------------------------------------------------
+
+
+class FitResult(_Frozen):
+    """One vacancy with its fit, band and everything that explains them."""
+
+    vacancy: VacancyFeatures
+    fit: float | None
+    band: Band
+    band_before_cap: Band  # differs from band only when an adjustment capped it
+    components: FitComponents
+    overlap: SkillOverlap
+    semantic: SemanticScore | None  # None when candidate vectors were unavailable
+    adjustment_reasons: list[str]
+    warnings: list[str]  # codes only
+    ranking_version: str
+
+
+class RankingResult(_Frozen):
+    results: list[FitResult]  # visible, sorted best first
+    hidden: list[FitResult]  # hidden by adjustments: fully scored, never dropped
+    band_counts: dict[Band, int]  # visible results only; every band present
+    hidden_count: int
+    scorer_name: str
+    weights: dict[str, float]  # e.g. {"skill": 0.7, "semantic": 0.3}
+    thresholds: dict[str, float]  # STRONG_COVERAGE, PARTIAL_COVERAGE, SEM_MIN
+    semantic_calibrated: bool | None  # None when no semantic scores were computed
+    ranking_version: str
+    warnings: list[str]  # codes only
+
+
+THRESHOLDS = {
+    "strong_coverage": STRONG_COVERAGE,
+    "partial_coverage": PARTIAL_COVERAGE,
+    "sem_min": SEM_MIN,
+}
+_DEFAULT_SCORER = LinearScorer()
+
+
+def rank_vacancies(
+    candidate_skills: CandidateSkills,
+    candidate_vectors: CandidateVectors | None,
+    vacancies: Sequence[VacancyFeatures],
+    adjustments: Mapping[str, VacancyAdjustment] | None = None,
+    scorer: Scorer = _DEFAULT_SCORER,
+    *,
+    calibration: Calibration | None = None,
+) -> RankingResult:
+    """Score, band and sort vacancies for one candidate.
+
+    ``candidate_vectors=None`` means embeddings are unavailable: ranking still
+    works on skills alone. ``adjustments`` is keyed by vacancy id (eligibility
+    checks); a hidden vacancy is still fully scored and listed in ``hidden``.
+    ``calibration`` is passed to JM-23's semantic_scores (default: its file).
+    """
+    started = time.perf_counter()
+    adjustments = adjustments or {}
+    warnings: list[str] = []
+    if candidate_vectors is None:
+        warnings.append(SEMANTIC_UNAVAILABLE)
+        semantics: list[SemanticScore | None] = [None] * len(vacancies)
+    else:
+        semantics = list(semantic_scores(candidate_vectors, vacancies, calibration))
+    if any(n > 1 for n in Counter(v.id for v in vacancies).values()):
+        warnings.append(DUPLICATE_VACANCY_ID)
+
+    visible: list[FitResult] = []
+    hidden: list[FitResult] = []
+    for vacancy, semantic in zip(vacancies, semantics, strict=True):
+        adjustment = adjustments.get(vacancy.id, VacancyAdjustment())
+        result = _fit_result(candidate_skills, vacancy, semantic, adjustment, scorer)
+        (hidden if adjustment.hidden else visible).append(result)
+    visible.sort(key=_sort_key)
+    hidden.sort(key=_sort_key)
+
+    band_counts = dict.fromkeys(Band, 0)
+    for result in visible:
+        band_counts[result.band] += 1
+    scored = [s for s in semantics if s is not None]
+    log.info("ranked %d vacancies: %s, hidden=%d, warnings=%s in %.0f ms", len(vacancies),
+             {b.value: n for b, n in band_counts.items()}, len(hidden), warnings,
+             (time.perf_counter() - started) * 1000)
+    return RankingResult(
+        results=visible,
+        hidden=hidden,
+        band_counts=band_counts,
+        hidden_count=len(hidden),
+        scorer_name=scorer.name,
+        weights=dict(getattr(scorer, "weights", {})),
+        thresholds=dict(THRESHOLDS),
+        semantic_calibrated=scored[0].calibrated if scored else None,
+        ranking_version=RANKING_VERSION,
+        warnings=warnings,
+    )
+
+
+def _fit_result(
+    candidate_skills: CandidateSkills,
+    vacancy: VacancyFeatures,
+    semantic: SemanticScore | None,
+    adjustment: VacancyAdjustment,
+    scorer: Scorer,
+) -> FitResult:
+    overlap = skill_overlap(candidate_skills, vacancy)
+    components = FitComponents(
+        skill=overlap.score,
+        required_coverage=overlap.required_coverage,
+        semantic=semantic.score if semantic is not None else None,
+        semantic_raw=semantic.raw if semantic is not None else None,
+    )
+    fit = scorer.score(components)
+    band, band_before_cap = assign_band(overlap, components.semantic, adjustment.band_cap)
+    warnings = fit_warnings(components, fit)
+    if band_before_cap is Band.STRONG and components.semantic is None:
+        warnings.append(BAND_WITHOUT_SEMANTIC)
+    return FitResult(
+        vacancy=vacancy, fit=fit, band=band, band_before_cap=band_before_cap,
+        components=components, overlap=overlap, semantic=semantic,
+        adjustment_reasons=list(adjustment.reasons), warnings=warnings,
+        ranking_version=RANKING_VERSION,
+    )
+
+
+def _sort_key(result: FitResult) -> tuple:
+    """Band, then fit (highest first), then newest posting, then id; None sorts last."""
+    posted = _timestamp(result.vacancy.posted_at)
+    return (
+        BAND_ORDER[result.band],
+        result.fit is None, -(result.fit or 0.0),
+        posted is None, -(posted or 0.0),
+        result.vacancy.id,
+    )
+
+
+def _timestamp(value: datetime | None) -> float | None:
+    if value is None:
+        return None
+    # Naive datetimes are taken as UTC, so mixed naive/aware input can't raise.
+    return (value if value.tzinfo else value.replace(tzinfo=timezone.utc)).timestamp()
