@@ -1,0 +1,69 @@
+{
+  "summary": null,
+  "skills": [
+    {
+      "name": "Python",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Python, SQL, Apache Airflow, Docker, PostgreSQL"
+    },
+    {
+      "name": "SQL",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Python, SQL, Apache Airflow, Docker, PostgreSQL"
+    },
+    {
+      "name": "Apache Airflow",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Python, SQL, Apache Airflow, Docker, PostgreSQL"
+    },
+    {
+      "name": "Docker",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Python, SQL, Apache Airflow, Docker, PostgreSQL"
+    },
+    {
+      "name": "PostgreSQL",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Python, SQL, Apache Airflow, Docker, PostgreSQL"
+    }
+  ],
+  "experience": [
+    {
+      "title": "Data Engineer",
+      "company": "Acme Widgets LLC",
+      "location": null,
+      "start": "2021",
+      "end": "2024",
+      "description": "Led the development of nightly reporting jobs for the finance team. Reduced report delivery time from hours to minutes.",
+      "skills_used": [],
+      "quote": "Data Engineer\nAcme Widgets LLC, 2021-2024"
+    },
+    {
+      "title": "Junior Analyst",
+      "company": "Globex Testing Co",
+      "location": null,
+      "start": "2019",
+      "end": "2021",
+      "description": "Maintained weekly sales dashboards for regional managers.",
+      "skills_used": [],
+      "quote": "Junior Analyst\nGlobex Testing Co, 2019-2021"
+    }
+  ],
+  "education": [
+    {
+      "institution": "Example State University",
+      "degree": "BSc",
+      "field": "Computer Science",
+      "start": "2015",
+      "end": "2019",
+      "quote": "BSc Computer Science, Example State University, 2015-2019"
+    }
+  ],
+  "languages": [],
+  "certifications": []
+}
