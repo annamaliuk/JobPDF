@@ -138,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
         "amp_repaired_spans": stats.amp_repaired_spans,
         "duplicate_spans": stats.duplicate_spans,
         "unlabeled_annotations": stats.unlabeled_annotations,
+        "resumes_without_name_label": stats.resumes_without_name_label,
         "missing_recordings": missing,
         "extraction_errors": errors,
         "extraction_warnings": extraction_warnings,
@@ -203,7 +204,10 @@ def _print_summary(report: dict, out: Path) -> None:
         f"span coverage {_fmt(skills['span_coverage'])}, "
         f"unlocated quotes {skills['unlocated_quotes']}/{skills['quotes']}"
     )
-    print(f"contact leaks: {report['contact_leaks']}")
+    print(
+        f"contact leaks: {report['contact_leaks']} "
+        f"({report['resumes_without_name_label']} resumes have no Name label to check against)"
+    )
     print(f"report written to {out}")
 
 
