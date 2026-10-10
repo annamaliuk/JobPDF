@@ -9,19 +9,32 @@ matching behaviour of its own: everything is delegated to JM-18's SkillMatcher.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Protocol
 
 import psycopg
 from pydantic import BaseModel, ConfigDict
 
-from jobpdf.normalization.match_cache import SkillMatch
-from jobpdf.normalization.matcher import SkillMatcher
+from jobpdf.extraction.llm import AnthropicToolCaller, MissingAPIKeyError, ToolCaller
+from jobpdf.normalization import match_prompt
+from jobpdf.normalization.db import database_url
+from jobpdf.normalization.index import Candidate, SkillIndex
+from jobpdf.normalization.match_cache import (
+    InMemorySkillMatchCache,
+    SkillMatch,
+    SkillMatchCache,
+    index_version,
+)
+from jobpdf.normalization.matcher import SkillIndexLike, SkillMatcher
 
 log = logging.getLogger(__name__)
 
 LLM_DISABLED = "disabled (ANTHROPIC_API_KEY missing)"
 DEFAULT_PROFILE_CONTEXT = "CV"
+INDEX_UNAVAILABLE_VERSION = "unavailable"
+WARM_UP_TEXT = "warm-up"
 
 
 class ServiceVersions(BaseModel):
@@ -160,3 +173,134 @@ def _index_reachable(index: object | None) -> bool:
     except psycopg.Error:
         return False
     return True
+
+
+# --- building from the environment ------------------------------------------------
+
+
+class _UnavailableIndex:
+    """Stand-in when the database can't be reached at build time.
+
+    Every lookup raises psycopg.OperationalError, which the matcher already turns
+    into ``index_unavailable`` results, so callers degrade instead of crashing.
+    """
+
+    available = False
+
+    @property
+    def meta(self) -> dict[str, object]:
+        return {}
+
+    def lookup_exact(self, raw: str) -> list[Candidate]:
+        raise psycopg.OperationalError("skill index database unavailable since startup")
+
+    def search(self, raws: list[str], k: int = 10) -> list[list[Candidate]]:
+        raise psycopg.OperationalError("skill index database unavailable since startup")
+
+
+def build_normalization_service(
+    cache: SkillMatchCache | None = None, *, warm_up: bool = True
+) -> NormalizationService:
+    """Build the service from the environment: DATABASE_URL, ANTHROPIC_API_KEY/_MODEL.
+
+    Never raises for a missing key or an unreachable database: it degrades and
+    says so in logs and ``status()``. ``cache`` is where JM-19's Postgres cache
+    plugs in. ``warm_up`` loads the e5 model now, so startup pays for it rather
+    than the first request (and concurrent first requests can't load it twice).
+    """
+    started = time.perf_counter()
+    index = _connect_index()
+    tool_caller = _anthropic_caller()
+    cache = cache if cache is not None else InMemorySkillMatchCache()
+    if warm_up and not isinstance(index, _UnavailableIndex):
+        _warm_up(index)
+    service = NormalizationService(
+        SkillMatcher(index, tool_caller, cache),
+        _versions(index),
+        index=index,
+        llm_model=tool_caller.model if tool_caller is not None else None,
+        cache_type=type(cache).__name__,
+    )
+    status = service.status()
+    log.info("normalization service built in %.0f ms: index=%s llm=%s cache=%s",
+             (time.perf_counter() - started) * 1000, status["index"], status["llm"],
+             status["cache"])
+    return service
+
+
+def _connect_index() -> SkillIndexLike:
+    url = database_url()
+    if not url:
+        log.warning("DATABASE_URL missing; skill index unavailable")
+        return _UnavailableIndex()
+    try:
+        return SkillIndex.connect(url)
+    except psycopg.Error as exc:
+        # The URL is never logged: it carries the database password.
+        log.warning("skill index database unreachable (%s); matching degrades to "
+                    "index_unavailable until the service is rebuilt", type(exc).__name__)
+        return _UnavailableIndex()
+
+
+def _anthropic_caller() -> ToolCaller | None:
+    try:
+        return AnthropicToolCaller()
+    except MissingAPIKeyError:
+        log.warning("ANTHROPIC_API_KEY missing; LLM tier disabled (exact and vector tiers only)")
+        return None
+
+
+def _warm_up(index: SkillIndexLike) -> None:
+    started = time.perf_counter()
+    try:
+        index.embedder.embed([WARM_UP_TEXT])  # type: ignore[attr-defined]
+    except Exception as exc:  # a missing model must not stop the service; search degrades
+        log.warning("embedding model warm-up failed (%s)", type(exc).__name__)
+        return
+    log.info("embedding model loaded in %.0f ms", (time.perf_counter() - started) * 1000)
+
+
+def _versions(index: SkillIndexLike) -> ServiceVersions:
+    if isinstance(index, _UnavailableIndex):
+        return ServiceVersions(taxonomy=None, index=INDEX_UNAVAILABLE_VERSION,
+                               matcher_prompt=match_prompt.MATCHER_PROMPT_VERSION)
+    meta = index.meta or {}
+    taxonomy = meta.get("taxonomy")
+    esco_version = taxonomy.get("esco_version") if isinstance(taxonomy, Mapping) else None
+    return ServiceVersions(taxonomy=esco_version, index=index_version(meta),
+                           matcher_prompt=match_prompt.MATCHER_PROMPT_VERSION)
+
+
+# --- one instance per process ------------------------------------------------------
+
+_service: NormalizationService | None = None
+_service_lock = threading.Lock()
+
+
+def get_normalization_service() -> NormalizationService:
+    """The process-wide service, built on first call (FastAPI startup, or once per Airflow task).
+
+    Thread-safety assumptions (FastAPI may call it concurrently):
+    - the first build is guarded by a lock, so it happens once;
+    - SkillIndex shares one psycopg 3 connection, which serializes concurrent queries;
+    - InMemorySkillMatchCache relies on single dict get/set being atomic under the GIL;
+    - the model is loaded at build (warm-up), so no request triggers a lazy double load;
+    - SkillMatcher keeps no per-call state on the instance.
+    After a database outage the index stays unavailable: /health (``status()``) shows
+    it, and a restart or ``reset_normalization_service()`` rebuilds it.
+    """
+    global _service
+    if _service is None:
+        with _service_lock:
+            if _service is None:
+                _service = build_normalization_service()
+    return _service
+
+
+def reset_normalization_service() -> None:
+    """Close and forget the process-wide service (tests, or a rebuild after an outage)."""
+    global _service
+    with _service_lock:
+        service, _service = _service, None
+    if service is not None:
+        service.close()

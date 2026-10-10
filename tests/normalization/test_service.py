@@ -1,3 +1,6 @@
+import logging
+from concurrent.futures import ThreadPoolExecutor
+
 import psycopg
 import pytest
 
@@ -9,6 +12,7 @@ from jobpdf.extraction.schema import (
     Skill,
     SkillMention,
 )
+from jobpdf.normalization import service as service_module
 from jobpdf.normalization.index import Candidate
 from jobpdf.normalization.match_cache import (
     InMemorySkillMatchCache,
@@ -16,11 +20,15 @@ from jobpdf.normalization.match_cache import (
     index_version,
 )
 from jobpdf.normalization.match_prompt import MATCHER_PROMPT_VERSION
-from jobpdf.normalization.matcher import EMPTY_SKILL, SkillMatcher
+from jobpdf.normalization.matcher import EMPTY_SKILL, INDEX_UNAVAILABLE, SkillMatcher
 from jobpdf.normalization.service import (
     LLM_DISABLED,
+    WARM_UP_TEXT,
     NormalizationService,
     ServiceVersions,
+    build_normalization_service,
+    get_normalization_service,
+    reset_normalization_service,
 )
 from jobpdf.normalization.text import normalize
 
@@ -271,3 +279,143 @@ def test_service_uses_the_matchers_cache() -> None:
     svc.normalize_skills(["GBQ"])
 
     assert len(cache) == 1
+
+
+# --- build_normalization_service and the singleton -----------------------------------
+
+FAKE_URL = "postgresql://jobpdf:SECRETPW@localhost:5432/jobpdf"
+
+
+class FakeEmbedder:
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def embed(self, texts: list[str]):
+        self.calls.append(list(texts))
+        return []
+
+
+class BuildableIndex(FakeIndex):
+    def __init__(self) -> None:
+        super().__init__()
+        self.embedder = FakeEmbedder()
+
+
+@pytest.fixture
+def env(monkeypatch: pytest.MonkeyPatch):
+    """A fake database and no API key; tests opt into more."""
+    built: list[BuildableIndex] = []
+
+    class FakeSkillIndex:
+        @staticmethod
+        def connect(url: str, **kwargs) -> BuildableIndex:
+            assert url == FAKE_URL
+            built.append(BuildableIndex())
+            return built[-1]
+
+    monkeypatch.setattr(service_module, "database_url", lambda: FAKE_URL)
+    monkeypatch.setattr(service_module, "SkillIndex", FakeSkillIndex)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    service_module.reset_normalization_service()
+    yield built
+    service_module.reset_normalization_service()
+
+
+def test_build_without_api_key_disables_the_llm_with_one_warning(
+    env, caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.INFO, logger="jobpdf.normalization.service"):
+        svc = build_normalization_service()
+
+    status = svc.status()
+    assert status["index"] == "ok" and status["llm"] == LLM_DISABLED
+    assert status["taxonomy_version"] == "v1.2.1"
+    assert status["index_version"] == index_version(META)
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "ANTHROPIC_API_KEY missing" in warnings[0]
+    assert "SECRETPW" not in caplog.text
+    assert svc.normalize_skills(["GBQ"])[0].concept_id == BIGQUERY
+
+
+def test_build_warms_up_the_model_unless_told_not_to(env) -> None:
+    build_normalization_service()
+    build_normalization_service(warm_up=False)
+
+    assert env[0].embedder.calls == [[WARM_UP_TEXT]]
+    assert env[1].embedder.calls == []
+
+
+def test_build_with_api_key_enables_the_llm(env, monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeAnthropic:
+        model = "claude-sonnet-4-6"
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-dummy-SECRET-value")
+    monkeypatch.setattr(service_module, "AnthropicToolCaller", FakeAnthropic)
+
+    status = build_normalization_service().status()
+
+    assert (status["llm"], status["llm_model"]) == ("enabled", "claude-sonnet-4-6")
+    assert "SECRET" not in str(status)
+
+
+@pytest.mark.parametrize("cause", ["unreachable", "no_url"])
+def test_build_with_an_unavailable_database_still_builds(
+    env, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, cause: str,
+) -> None:
+    def refuse(url: str, **kwargs):
+        raise psycopg.OperationalError("connection timeout expired")
+
+    if cause == "unreachable":
+        monkeypatch.setattr(service_module.SkillIndex, "connect", staticmethod(refuse))
+    else:
+        monkeypatch.setattr(service_module, "database_url", lambda: None)
+
+    with caplog.at_level(logging.WARNING):
+        svc = build_normalization_service()
+    (m,) = svc.normalize_skills(["GBQ"])
+
+    assert svc.status()["index"] == "unavailable"
+    assert svc.versions == ServiceVersions(taxonomy=None, index="unavailable",
+                                           matcher_prompt=MATCHER_PROMPT_VERSION)
+    assert (m.tier, m.warnings) == (T.UNMATCHED, [INDEX_UNAVAILABLE])
+    assert "SECRETPW" not in caplog.text
+
+
+def test_a_custom_cache_is_the_one_used(env) -> None:
+    class RecordingCache(InMemorySkillMatchCache):
+        def __init__(self) -> None:
+            super().__init__()
+            self.keys: list[str] = []
+
+        def set(self, key, match) -> None:
+            self.keys.append(key)
+            super().set(key, match)
+
+    cache = RecordingCache()
+    svc = build_normalization_service(cache=cache)
+
+    svc.normalize_skills(["GBQ", "gbq"])
+
+    assert len(cache.keys) == 1 and cache.keys[0].endswith("|gbq")
+    assert svc.status()["cache"] == "RecordingCache"
+
+
+def test_singleton_is_built_once_and_reset_closes_it(env) -> None:
+    first = get_normalization_service()
+    second = get_normalization_service()
+
+    assert first is second and len(env) == 1
+
+    reset_normalization_service()
+    third = get_normalization_service()
+
+    assert env[0].closed
+    assert third is not first and len(env) == 2
+
+
+def test_concurrent_first_calls_build_once(env) -> None:
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        services = list(pool.map(lambda _: get_normalization_service(), range(16)))
+
+    assert len({id(s) for s in services}) == 1 and len(env) == 1
