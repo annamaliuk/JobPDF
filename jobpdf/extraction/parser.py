@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from jobpdf.extraction.models import ParsedDocument, ParseError, RawBlock, SourceType, TextBlock
+from jobpdf.extraction.parse_docx import parse_docx
 from jobpdf.extraction.parse_pdf import parse_pdf
 
 MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -17,6 +18,7 @@ FormatParser = Callable[[Path], FormatResult]
 
 _PARSERS: dict[str, tuple[SourceType, FormatParser]] = {
     ".pdf": ("pdf", parse_pdf),
+    ".docx": ("docx", parse_docx),
 }
 
 

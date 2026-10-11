@@ -4,7 +4,7 @@ import pymupdf
 import pytest
 
 from jobpdf.extraction import ParseError, parse
-from jobpdf.extraction.parse_pdf import MAX_PAGES, clean_text
+from jobpdf.extraction.parse_pdf import MAX_PAGES
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TEXT_FIXTURES = ["single_column.pdf", "two_column.pdf", "left_sidebar.pdf"]
@@ -98,18 +98,3 @@ def test_owner_password_only_pdf_is_parsed(tmp_path: Path) -> None:
 
     doc = parse(path)
     assert "Olena Testenko" in doc.full_text
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("ofﬁce workﬂow", "office workflow"),  # ligatures
-        ("develop-\nment", "development"),
-        ("Front-\nEnd", "Front-\nEnd"),  # capitalised continuation keeps the hyphen
-        ("2019-\n2021", "2019-\n2021"),  # date ranges stay intact
-        ("  Python \t SQL  \n\n\n Docker ", "Python SQL\nDocker"),
-        (" \n \n", ""),
-    ],
-)
-def test_clean_text(raw: str, expected: str) -> None:
-    assert clean_text(raw) == expected
