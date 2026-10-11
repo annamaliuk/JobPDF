@@ -13,6 +13,7 @@ from jobpdf.extraction.schema import (
     SkillMention,
 )
 from jobpdf.normalization import service as service_module
+from jobpdf.normalization.embedder import shared_embedder
 from jobpdf.normalization.index import Candidate
 from jobpdf.normalization.match_cache import (
     InMemorySkillMatchCache,
@@ -296,9 +297,10 @@ class FakeEmbedder:
 
 
 class BuildableIndex(FakeIndex):
-    def __init__(self) -> None:
+    def __init__(self, received_embedder=None) -> None:
         super().__init__()
-        self.embedder = FakeEmbedder()
+        self.embedder = FakeEmbedder()  # warm-up uses this, so no real model loads
+        self.received_embedder = received_embedder  # what the builder passed to connect
 
 
 @pytest.fixture
@@ -308,9 +310,9 @@ def env(monkeypatch: pytest.MonkeyPatch):
 
     class FakeSkillIndex:
         @staticmethod
-        def connect(url: str, **kwargs) -> BuildableIndex:
+        def connect(url: str, embedder=None, **kwargs) -> BuildableIndex:
             assert url == FAKE_URL
-            built.append(BuildableIndex())
+            built.append(BuildableIndex(embedder))
             return built[-1]
 
     monkeypatch.setattr(service_module, "database_url", lambda: FAKE_URL)
@@ -363,7 +365,7 @@ def test_build_with_api_key_enables_the_llm(env, monkeypatch: pytest.MonkeyPatch
 def test_build_with_an_unavailable_database_still_builds(
     env, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, cause: str,
 ) -> None:
-    def refuse(url: str, **kwargs):
+    def refuse(url: str, embedder=None, **kwargs):
         raise psycopg.OperationalError("connection timeout expired")
 
     if cause == "unreachable":
@@ -419,3 +421,17 @@ def test_concurrent_first_calls_build_once(env) -> None:
         services = list(pool.map(lambda _: get_normalization_service(), range(16)))
 
     assert len({id(s) for s in services}) == 1 and len(env) == 1
+
+
+def test_index_gets_the_process_wide_shared_embedder_by_default(env) -> None:
+    build_normalization_service(warm_up=False)
+
+    assert env[0].received_embedder is shared_embedder()
+
+
+def test_a_passed_embedder_reaches_the_index(env) -> None:
+    mine = FakeEmbedder()
+
+    build_normalization_service(warm_up=False, embedder=mine)
+
+    assert env[0].received_embedder is mine
