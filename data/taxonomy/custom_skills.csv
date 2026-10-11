@@ -1,0 +1,48 @@
+canonical_id,canonical_name,alias,lang
+http://data.europa.eu/esco/skill/3cd569a2-4f88-4c1e-9995-8dce8c5e51a7,JavaScript,js,en
+http://data.europa.eu/esco/skill/867137fb-ff1b-4ca3-99f3-cb6969aa2c68,TypeScript,ts,en
+http://data.europa.eu/esco/skill/a8d07b5a-c1a1-42c6-9d53-db9c7a2ca996,PostgreSQL,postgres,en
+http://data.europa.eu/esco/skill/4c016b68-4116-468c-9dc6-42710c239e4a,C#,c sharp,en
+http://data.europa.eu/esco/skill/b633eb55-8f1f-4ae6-ab4c-2022ffe2cb7f,C++,cpp,en
+http://data.europa.eu/esco/skill/0af062de-eb43-41e9-9b96-249e2cd22d26,use markup languages,html,en
+http://data.europa.eu/esco/skill/0af062de-eb43-41e9-9b96-249e2cd22d26,use markup languages,html5,en
+http://data.europa.eu/esco/skill/1973c966-f236-40c9-b2d4-5d71a89019be,use spreadsheets software,excel,en
+http://data.europa.eu/esco/skill/1973c966-f236-40c9-b2d4-5d71a89019be,use spreadsheets software,microsoft excel,en
+http://data.europa.eu/esco/skill/f9a6f35b-01a7-40c9-8b61-b6ee46f97272,operating systems,unix,en
+http://data.europa.eu/esco/skill/3a2d5b45-56e4-4f5a-a55a-4a4a65afdc43,machine learning,ml,en
+http://data.europa.eu/esco/skill/fff0e2cd-d0bd-4b02-9daf-158b79d9688a,natural language processing,nlp,en
+jobpdf:skill/docker,Docker,docker,en
+jobpdf:skill/docker,,docker compose,en
+jobpdf:skill/kubernetes,Kubernetes,kubernetes,en
+jobpdf:skill/kubernetes,,k8s,en
+jobpdf:skill/apache-airflow,Apache Airflow,apache airflow,en
+jobpdf:skill/apache-airflow,,airflow,en
+jobpdf:skill/dbt,dbt,dbt,en
+jobpdf:skill/dbt,,data build tool,en
+jobpdf:skill/google-bigquery,Google BigQuery,google bigquery,en
+jobpdf:skill/google-bigquery,,bigquery,en
+jobpdf:skill/google-bigquery,,gbq,en
+jobpdf:skill/terraform,Terraform,terraform,en
+jobpdf:skill/pandas,pandas,pandas,en
+jobpdf:skill/apache-spark,Apache Spark,apache spark,en
+jobpdf:skill/apache-spark,,spark,en
+jobpdf:skill/apache-spark,,pyspark,en
+jobpdf:skill/amazon-web-services,Amazon Web Services,amazon web services,en
+jobpdf:skill/amazon-web-services,,aws,en
+jobpdf:skill/google-cloud-platform,Google Cloud Platform,google cloud platform,en
+jobpdf:skill/google-cloud-platform,,gcp,en
+jobpdf:skill/google-cloud-platform,,google cloud,en
+jobpdf:skill/microsoft-azure,Microsoft Azure,microsoft azure,en
+jobpdf:skill/microsoft-azure,,azure,en
+jobpdf:skill/nodejs,Node.js,node.js,en
+jobpdf:skill/nodejs,,nodejs,en
+jobpdf:skill/nodejs,,node,en
+jobpdf:skill/go-programming,Go (programming language),go (programming language),en
+jobpdf:skill/go-programming,,go,en
+jobpdf:skill/go-programming,,golang,en
+jobpdf:skill/mongodb,MongoDB,mongodb,en
+jobpdf:skill/apache-kafka,Apache Kafka,apache kafka,en
+jobpdf:skill/apache-kafka,,kafka,en
+jobpdf:skill/rust,Rust (programming language),rust,en
+jobpdf:skill/django,Django,django,en
+jobpdf:skill/redis,Redis,redis,en

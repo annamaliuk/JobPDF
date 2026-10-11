@@ -1,0 +1,50 @@
+{
+  "summary": "Platform engineer with six years of experience running internal services for product teams of various sizes, with a strong focus on reliability and clear on-call practices that keep the incident load low for everyone who is involved in the weekly support rota.",
+  "skills": [
+    {
+      "name": "Python",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Python"
+    },
+    {
+      "name": "SQL",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "SQL"
+    },
+    {
+      "name": "Docker",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Docker"
+    },
+    {
+      "name": "Kubernetes",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Kubernetes"
+    },
+    {
+      "name": "Terraform",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Terraform"
+    }
+  ],
+  "experience": [
+    {
+      "title": "Platform Engineer",
+      "company": "Initech Demo Ltd",
+      "location": null,
+      "start": "2020",
+      "end": "2024",
+      "description": "Moved the deployment pipeline to a declarative setup that is now used by four teams, replacing the hand-written release scripts and halving the average change lead time.",
+      "skills_used": [],
+      "quote": "Platform Engineer\nInitech Demo Ltd, 2020-2024"
+    }
+  ],
+  "education": [],
+  "languages": [],
+  "certifications": []
+}
