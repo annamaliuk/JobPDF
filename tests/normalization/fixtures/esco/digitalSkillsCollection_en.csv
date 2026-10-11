@@ -1,0 +1,4 @@
+conceptType,conceptUri,preferredLabel,status,skillType,reuseLevel,altLabels,description,broaderConceptUri,broaderConceptPT
+KnowledgeSkillCompetence,http://example.org/esco/skill/python,Python (computer programming),released,knowledge,cross-sector,"Python 3K
+Python",Fake description.,http://example.org/esco/group/programming,programming languages
+KnowledgeSkillCompetence,http://example.org/esco/skill/sql,SQL,released,knowledge,cross-sector,Structured Query Language,Fake description.,http://example.org/esco/group/programming,programming languages
