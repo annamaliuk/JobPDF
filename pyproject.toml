@@ -5,9 +5,14 @@ description = "CV parsing, ESCO skill normalization and vacancy ranking"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "numpy>=2.2.6",
+    "pgvector>=0.5.0",
+    "psycopg[binary]>=3.3.6",
     "pymupdf>=1.28.2",
     "python-docx>=1.2.0",
     "rapidfuzz>=3.14.5",
+    "sentence-transformers>=6.1.0",
+    "torch>=2.14",
 ]
 
 [dependency-groups]
@@ -31,3 +36,15 @@ select = ["E", "F", "I", "UP", "B"]
 testpaths = ["tests"]
 # tests/ mirrors jobpdf/, so same-named test files in different folders must not clash.
 addopts = "--import-mode=importlib"
+markers = [
+    "db: needs Postgres + pgvector via DATABASE_URL (skipped otherwise)",
+    "model: needs the downloaded embedding model and the real built index (skipped otherwise)",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
