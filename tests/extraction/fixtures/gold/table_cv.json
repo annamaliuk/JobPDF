@@ -1,0 +1,57 @@
+{
+  "summary": null,
+  "skills": [
+    {
+      "name": "Python",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Python, SQL, Docker"
+    },
+    {
+      "name": "SQL",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Python, SQL, Docker"
+    },
+    {
+      "name": "Docker",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Python, SQL, Docker"
+    }
+  ],
+  "experience": [
+    {
+      "title": "Data Engineer",
+      "company": "Acme Widgets LLC",
+      "location": null,
+      "start": "2021",
+      "end": "2024",
+      "description": null,
+      "skills_used": [],
+      "quote": "Data Engineer\n\nAcme Widgets LLC"
+    },
+    {
+      "title": "Junior Analyst",
+      "company": "Globex Testing Co",
+      "location": null,
+      "start": "2019",
+      "end": "2021",
+      "description": null,
+      "skills_used": [],
+      "quote": "Junior Analyst\n\nGlobex Testing Co"
+    }
+  ],
+  "education": [
+    {
+      "institution": "Example State University",
+      "degree": "BSc",
+      "field": "Computer Science",
+      "start": "2015",
+      "end": "2019",
+      "quote": "BSc Computer Science, Example State University"
+    }
+  ],
+  "languages": [],
+  "certifications": []
+}

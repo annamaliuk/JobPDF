@@ -1,0 +1,78 @@
+{
+  "summary": null,
+  "skills": [
+    {
+      "name": "Python",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Python"
+    },
+    {
+      "name": "SQL",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "SQL"
+    },
+    {
+      "name": "Apache Airflow",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Apache Airflow"
+    },
+    {
+      "name": "Docker",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "Docker"
+    },
+    {
+      "name": "PostgreSQL",
+      "kind": "hard",
+      "found_in": "skills_list",
+      "quote": "PostgreSQL"
+    }
+  ],
+  "experience": [
+    {
+      "title": "Data Engineer",
+      "company": "Acme Widgets LLC",
+      "location": null,
+      "start": "2021",
+      "end": "2024",
+      "description": "Built nightly reporting jobs for finance. Cut report delivery from hours to minutes.",
+      "skills_used": [],
+      "quote": "Data Engineer\nAcme Widgets LLC, 2021-2024"
+    },
+    {
+      "title": "Junior Analyst",
+      "company": "Globex Testing Co",
+      "location": null,
+      "start": "2019",
+      "end": "2021",
+      "description": "Maintained weekly sales dashboards.",
+      "skills_used": [],
+      "quote": "Junior Analyst\nGlobex Testing Co, 2019-2021"
+    }
+  ],
+  "education": [
+    {
+      "institution": "Example State University",
+      "degree": "BSc",
+      "field": "Computer Science",
+      "start": "2015",
+      "end": "2019",
+      "quote": "BSc Computer Science\nExample State University, 2015-2019"
+    }
+  ],
+  "languages": [
+    {
+      "language": "Ukrainian",
+      "level": "native"
+    },
+    {
+      "language": "English",
+      "level": "C1"
+    }
+  ],
+  "certifications": []
+}

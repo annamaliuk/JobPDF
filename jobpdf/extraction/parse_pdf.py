@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
 import pymupdf
 
+from jobpdf.extraction.cleaning import clean_text
 from jobpdf.extraction.models import ParseError, RawBlock
 
 MAX_PAGES = 15
@@ -31,8 +31,6 @@ _BOLD_FLAG = 16
 _BOLD_FONT_NAME = re.compile(r"bold|black|heavy", re.IGNORECASE)
 # Skip image payloads: we never use them and they bloat the dict output.
 _TEXT_FLAGS = pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
-_HYPHEN_BREAK = re.compile(r"([^\W\d_])[-­]\n([^\W\d_])")
-_INLINE_SPACE = re.compile(r"[^\S\n]+")
 
 
 def parse_pdf(path: Path) -> tuple[list[RawBlock], bool, list[str]]:
@@ -121,28 +119,6 @@ def _to_raw_block(block: dict[str, Any], page_number: int) -> RawBlock | None:
 
 def _is_bold(span: dict[str, Any]) -> bool:
     return bool(span["flags"] & _BOLD_FLAG) or bool(_BOLD_FONT_NAME.search(span["font"]))
-
-
-def clean_text(text: str) -> str:
-    """Normalise extracted text while keeping one line per visual line.
-
-    Line breaks are kept (single ``\\n``) because JM-10 uses bullet lines; blank
-    lines are dropped so a block can never contain the block separator.
-    """
-    text = unicodedata.normalize("NFKC", text)  # also expands ligatures like "ﬁ"
-    text = _HYPHEN_BREAK.sub(_join_hyphenated, text)
-    text = text.replace("­", "")
-    lines = (_INLINE_SPACE.sub(" ", line).strip() for line in text.split("\n"))
-    return "\n".join(line for line in lines if line)
-
-
-def _join_hyphenated(match: re.Match[str]) -> str:
-    # Only join when the next word continues in lowercase ("develop-\nment");
-    # "Front-\nEnd" or "Senior-\nLevel" keep their hyphen.
-    before, after = match.group(1), match.group(2)
-    if after.islower():
-        return before + after
-    return match.group(0)
 
 
 def order_blocks(blocks: list[RawBlock], page_width: float) -> list[RawBlock]:
