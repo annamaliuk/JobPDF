@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict
 from jobpdf.extraction.llm import AnthropicToolCaller, MissingAPIKeyError, ToolCaller
 from jobpdf.normalization import match_prompt
 from jobpdf.normalization.db import database_url
+from jobpdf.normalization.embedder import TextEmbedder, shared_embedder
 from jobpdf.normalization.index import Candidate, SkillIndex
 from jobpdf.normalization.match_cache import (
     InMemorySkillMatchCache,
@@ -199,7 +200,10 @@ class _UnavailableIndex:
 
 
 def build_normalization_service(
-    cache: SkillMatchCache | None = None, *, warm_up: bool = True
+    cache: SkillMatchCache | None = None,
+    *,
+    warm_up: bool = True,
+    embedder: TextEmbedder | None = None,
 ) -> NormalizationService:
     """Build the service from the environment: DATABASE_URL, ANTHROPIC_API_KEY/_MODEL.
 
@@ -207,9 +211,11 @@ def build_normalization_service(
     says so in logs and ``status()``. ``cache`` is where JM-19's Postgres cache
     plugs in. ``warm_up`` loads the e5 model now, so startup pays for it rather
     than the first request (and concurrent first requests can't load it twice).
+    ``embedder`` defaults to the process-wide ``shared_embedder()``, the same
+    instance semantic scoring (JM-23) uses, so the model is loaded only once.
     """
     started = time.perf_counter()
-    index = _connect_index()
+    index = _connect_index(embedder if embedder is not None else shared_embedder())
     tool_caller = _anthropic_caller()
     cache = cache if cache is not None else InMemorySkillMatchCache()
     if warm_up and not isinstance(index, _UnavailableIndex):
@@ -228,13 +234,13 @@ def build_normalization_service(
     return service
 
 
-def _connect_index() -> SkillIndexLike:
+def _connect_index(embedder: TextEmbedder) -> SkillIndexLike:
     url = database_url()
     if not url:
         log.warning("DATABASE_URL missing; skill index unavailable")
         return _UnavailableIndex()
     try:
-        return SkillIndex.connect(url)
+        return SkillIndex.connect(url, embedder)
     except psycopg.Error as exc:
         # The URL is never logged: it carries the database password.
         log.warning("skill index database unreachable (%s); matching degrades to "
