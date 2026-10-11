@@ -2,23 +2,66 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import tempfile
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
+import pymupdf
+
 from jobpdf.extraction.models import ParsedDocument, ParseError, RawBlock, SourceType, TextBlock
+from jobpdf.extraction.ocr import OCR_DPI
 from jobpdf.extraction.parse_docx import parse_docx
 from jobpdf.extraction.parse_pdf import parse_pdf
 
 MAX_FILE_BYTES = 20 * 1024 * 1024
 BLOCK_SEPARATOR = "\n\n"
 
-FormatResult = tuple[list[RawBlock], bool, list[str]]
+# (blocks, has_text_layer, warnings) plus, for PDFs, the 0-based OCR'd pages (JM-9).
+FormatResult = tuple[list[RawBlock], bool, list[str]] | tuple[
+    list[RawBlock], bool, list[str], list[int]
+]
 FormatParser = Callable[[Path], FormatResult]
+
+
+def parse_image(path: Path) -> FormatResult:
+    """A photo or scan of a CV (JM-9): wrap it in a one-page PDF and parse that.
+
+    Without OCR (developer machines) this degrades exactly like a scanned PDF.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        pdf_path = Path(tmp) / "image.pdf"
+        pdf_path.write_bytes(image_to_pdf(path))
+        return parse_pdf(pdf_path)
+
+
+def image_to_pdf(path: Path) -> bytes:
+    """One page that shows the image at exactly OCR_DPI.
+
+    Not plain convert_to_pdf(): that sizes the page from the image's DPI tag,
+    and photos/screenshots tagged 72 dpi would become poster-sized pages that
+    OCR renders at ~4x the real resolution (slow, memory-hungry, no gain).
+    """
+    try:
+        pixmap = pymupdf.Pixmap(str(path))
+    except Exception as exc:  # unreadable or not really an image
+        raise ParseError("corrupt", f"Cannot open image: {exc}") from exc
+    doc = pymupdf.open()
+    try:
+        scale = 72 / OCR_DPI
+        page = doc.new_page(width=pixmap.width * scale, height=pixmap.height * scale)
+        page.insert_image(page.rect, pixmap=pixmap)
+        return doc.tobytes(garbage=3, deflate=True)
+    finally:
+        doc.close()
 
 
 _PARSERS: dict[str, tuple[SourceType, FormatParser]] = {
     ".pdf": ("pdf", parse_pdf),
     ".docx": ("docx", parse_docx),
+    # Images become a one-page PDF, so they report source_type "pdf".
+    ".png": ("pdf", parse_image),
+    ".jpg": ("pdf", parse_image),
+    ".jpeg": ("pdf", parse_image),
 }
 
 
@@ -38,8 +81,9 @@ def parse(path: str | Path) -> ParsedDocument:
     if size > MAX_FILE_BYTES:
         raise ParseError("too_large", f"File is {size} bytes; limit is {MAX_FILE_BYTES}")
 
-    raw_blocks, has_text_layer, warnings = format_parser(path)
-    return _assemble(source_type, raw_blocks, has_text_layer, warnings)
+    raw_blocks, has_text_layer, warnings, *rest = format_parser(path)
+    ocr_pages = rest[0] if rest else []
+    return _assemble(source_type, raw_blocks, has_text_layer, warnings, ocr_pages)
 
 
 def _assemble(
@@ -47,6 +91,7 @@ def _assemble(
     raw_blocks: list[RawBlock],
     has_text_layer: bool,
     warnings: list[str],
+    ocr_pages: Sequence[int] = (),
 ) -> ParsedDocument:
     """Join blocks and compute offsets in one place, shared by all formats."""
     blocks: list[TextBlock] = []
@@ -80,4 +125,5 @@ def _assemble(
         full_text=full_text,
         has_text_layer=has_text_layer,
         warnings=list(warnings),
+        ocr_pages=list(ocr_pages),
     )

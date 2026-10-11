@@ -12,7 +12,7 @@ from typing import Literal
 
 SourceType = Literal["pdf", "docx"]
 ParseErrorReason = Literal[
-    "encrypted", "corrupt", "unsupported_type", "too_large", "too_many_pages"
+    "encrypted", "corrupt", "unsupported_type", "too_large", "too_many_pages", "unreadable"
 ]
 BBox = tuple[float, float, float, float]
 SectionType = Literal[
@@ -72,6 +72,8 @@ class ParsedDocument:
     full_text: str
     has_text_layer: bool
     warnings: list[str] = field(default_factory=list)
+    # 0-based indexes of pages whose text came from OCR (JM-9).
+    ocr_pages: list[int] = field(default_factory=list)
 
 
 class ParseError(Exception):

@@ -1,3 +1,5 @@
 # Fixtures are binary; never let autocrlf touch them.
 *.pdf binary
 *.docx binary
+# Shell scripts must keep LF or bash fails on Windows checkouts.
+*.sh text eol=lf
