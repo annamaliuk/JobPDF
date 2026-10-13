@@ -46,3 +46,73 @@ jobpdf:skill/apache-kafka,,kafka,en
 jobpdf:skill/rust,Rust (programming language),rust,en
 jobpdf:skill/django,Django,django,en
 jobpdf:skill/redis,Redis,redis,en
+http://data.europa.eu/esco/skill/8770350e-746f-4adb-9556-18ca68104be6,Market Research,market research,en
+http://data.europa.eu/esco/skill/8770350e-746f-4adb-9556-18ca68104be6,,market & product research,en
+http://data.europa.eu/esco/skill/8770350e-746f-4adb-9556-18ca68104be6,,market analysis,en
+jobpdf:skill/ai-workflows,AI workflows,ai workflows,en
+jobpdf:skill/ai-workflows,AI automation,ai automation,en
+jobpdf:skill/similarweb,SimilarWeb,similarweb,en
+jobpdf:skill/appmagic,AppMagic,appmagic,en
+jobpdf:skill/sensortower,SensorTower,sensortower,en
+jobpdf:skill/semrush,Semrush,semrush,en
+jobpdf:skill/notion,Notion,notion,en
+jobpdf:skill/claude,Claude,claude,en
+jobpdf:skill/codex,Codex,codex,en
+jobpdf:skill/vue,Vue,vue,en
+jobpdf:skill/react,React,react,en
+jobpdf:skill/redux,Redux,redux,en
+jobpdf:skill/tailwind,Tailwind,tailwind,en
+jobpdf:skill/rest-api,REST API,rest api,en
+jobpdf:skill/grpc,gRPC,grpc,en
+jobpdf:skill/git,Git,git,en
+jobpdf:skill/figma,Figma,figma,en
+jobpdf:skill/sentry,Sentry,sentry,en
+jobpdf:skill/gemini,Gemini,gemini,en
+jobpdf:skill/kotlin,Kotlin,kotlin,en
+jobpdf:skill/sql,SQL,sql,en
+jobpdf:skill/nest-js,NestJS,nestjs,en
+jobpdf:skill/express-js,Express.js,express.js,en
+jobpdf:skill/graph-ql,GraphQL,graphql,en
+jobpdf:skill/firebase,Firebase,firebase,en
+jobpdf:skill/blockchain,Blockchain,blockchain,en
+jobpdf:skill/tableau,Tableau,tableau,en
+jobpdf:skill/dotnet,.NET,.net,en
+jobpdf:skill/bootstrap,Bootstrap,bootstrap,en
+jobpdf:skill/unix,UNIX,unix,en
+jobpdf:skill/angular,Angular,angular,en
+jobpdf:skill/windsurf,Windsurf,windsurf,en
+jobpdf:skill/selenium,Selenium,selenium,en
+jobpdf:skill/aws,AWS,aws,en
+jobpdf:skill/elk,ELK,elk,en
+jobpdf:skill/grafana,Grafana,grafana,en
+jobpdf:skill/ubuntu,Ubuntu,ubuntu,en
+jobpdf:skill/debian,Debian,debian,en
+jobpdf:skill/freebsd,FreeBSD,freebsd,en
+jobpdf:skill/bash,Bash,bash,en
+jobpdf:skill/rabbitmq,RabbitMQ,rabbitmq,en
+jobpdf:skill/bullmq,BullMQ,bullmq,en
+jobpdf:skill/jenkins,Jenkins,jenkins,en
+jobpdf:skill/wordpress,WordPress,wordpress,en
+jobpdf:skill/google-analytics,Google Analytics,google analytics,en
+jobpdf:skill/midjourney,Midjourney,midjourney,en
+jobpdf:skill/higgsfield,Higgsfield,higgsfield,en
+jobpdf:skill/looker-studio,Looker Studio,looker studio,en
+jobpdf:skill/airtable,Airtable,airtable,en
+jobpdf:skill/zapier,Zapier,zapier,en
+jobpdf:skill/photoshop,Photoshop,photoshop,en
+jobpdf:skill/illustrator,Illustrator,illustrator,en
+jobpdf:skill/wix,Wix,wix,en
+jobpdf:skill/hypothesis-testing,Hypothesis testing,hypothesis testing,en
+jobpdf:skill/amplitude,Amplitude,amplitude,en
+jobpdf:skill/google-analytics,GA4,ga4,en
+jobpdf:skill/miro,Miro,miro,en
+jobpdf:skill/asana,Asana,asana,en
+jobpdf:skill/google-tag-manager,Google Tag Manager,google tag manager,en
+jobpdf:skill/google-tag-manager,GTM,gtm,en
+jobpdf:skill/wireframing,Wireframing,wireframing,en
+jobpdf:skill/webflow,Webflow,webflow,en
+jobpdf:skill/n8n,n8n,n8n,en
+jobpdf:skill/excel,Excel,excel,en
+jobpdf:skill/openclaw,OpenClaw,openclaw,en
+jobpdf:skill/laravel,Laravel,laravel,en
+jobpdf:skill/shopify,Shopify,shopify,en
