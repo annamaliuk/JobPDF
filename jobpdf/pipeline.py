@@ -7,8 +7,10 @@ web page (JM-41). It holds no HTTP, auth or response formatting (JM-29, JM-30); 
 chains the stages, collects what they report and says what produced the result.
 
 Inputs. ``content`` and ``filename`` are the upload; only the filename's extension is
-used (and never logged). The bytes go to a private temporary directory because the
-parsers read paths; the directory is removed on every exit, including errors. Vacancies
+used (and never logged). The bytes go to a private directory inside ``jobpdf/temp/``
+(git-ignored) because the parsers read paths; the directory is removed on every exit,
+including errors. A crash can still leave one behind, so each call first removes
+directories there that are older than an hour. Vacancies
 are an argument, not loaded here, so the demo can run on synthetic vacancies while the
 vacancy tables (JM-38) and ingestion (JM-31 to JM-33) are built.
 
@@ -24,7 +26,8 @@ Failure rules (decided by the implementer, to be reviewed):
   and everything the stages already report as warnings.
 
 Privacy. Nothing is stored: the extraction cache is off (it would write the profile to
-disk), the temporary file is deleted, and logs carry counts, codes and timings only.
+disk), the temporary file is deleted (see the cleanup above), and logs carry counts,
+codes and timings only.
 Extraction warnings are free text that embeds CV text (job titles, quote previews), so
 they are turned into stable codes here and the text is dropped. Exceptions from the LLM
 call are replaced by a code without chaining, because their messages can hold CV text.
@@ -39,6 +42,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import shutil
 import tempfile
 import time
 from collections import Counter
@@ -79,6 +83,9 @@ log = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # the description's limit; JM-30 should also enforce it early
 ALLOWED_SUFFIXES = (".pdf", ".docx")
+TEMP_DIR = Path(__file__).parent / "temp"  # where uploads are written while they are parsed
+TEMP_PREFIX = "jobpdf-cv-"
+STALE_AFTER_SECONDS = 60 * 60
 
 Stage = Literal[
     "parse", "sections", "extraction", "grounding", "normalization", "embedding", "ranking"
@@ -182,19 +189,21 @@ def analyze_cv(
     adjustments: Mapping[str, VacancyAdjustment] | None = None,
     today: dt.date | None = None,
     max_bytes: int = MAX_UPLOAD_BYTES,
+    temp_dir: Path | None = None,
 ) -> PipelineResult:
     """Run one CV through every stage and rank ``vacancies`` for it.
 
     Raises ``PipelineError`` when the CV cannot be used; everything else degrades into
     ``PipelineResult.warnings``. ``caller``, ``normalizer`` and ``embedder`` default to
-    the real services; tests pass fakes. Nothing is stored.
+    the real services; tests pass fakes. ``temp_dir`` defaults to ``TEMP_DIR``. Nothing
+    is stored.
     """
     started = time.perf_counter()
     timings: dict[str, int] = {}
     warnings = _Warnings()
 
     with _timed(timings, "parse"):
-        doc = _parse(content, filename, max_bytes)
+        doc = _parse(content, filename, max_bytes, temp_dir if temp_dir is not None else TEMP_DIR)
     warnings.add_many("parse", (PARSE_WARNING_CODES.get(w, "parse_warning") for w in doc.warnings))
     if not doc.full_text.strip():
         raise PipelineError("parse", NO_TEXT)
@@ -279,17 +288,42 @@ def classify_extraction_warning(text: str) -> str:
     return EXTRACTION_WARNING
 
 
+def remove_stale_temp(
+    temp_dir: Path | None = None, max_age_seconds: float = STALE_AFTER_SECONDS
+) -> int:
+    """Delete upload directories a crashed process left behind; returns how many.
+
+    Only directories with this module's prefix are touched, and only once they are older
+    than ``max_age_seconds`` (a request takes seconds, so a live one is never removed).
+    """
+    temp_dir = temp_dir if temp_dir is not None else TEMP_DIR
+    removed = 0
+    cutoff = time.time() - max_age_seconds
+    for entry in temp_dir.glob(f"{TEMP_PREFIX}*"):
+        try:
+            if entry.is_dir() and entry.stat().st_mtime < cutoff:
+                shutil.rmtree(entry, ignore_errors=True)
+                removed += 1
+        except OSError:  # raced with another cleanup
+            continue
+    if removed:
+        log.warning("removed %d stale upload directories from the temp folder", removed)
+    return removed
+
+
 # --- stages that need more than one call -------------------------------------------
 
 
-def _parse(content: bytes, filename: str, max_bytes: int) -> ParsedDocument:
+def _parse(content: bytes, filename: str, max_bytes: int, temp_dir: Path) -> ParsedDocument:
     """Parse upload bytes through a private temporary file that is always removed."""
     suffix = Path(filename).suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
         raise PipelineError("parse", "unsupported_type")
     if len(content) > max_bytes:
         raise PipelineError("parse", "too_large")
-    with tempfile.TemporaryDirectory(prefix="jobpdf-cv-") as directory:
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    remove_stale_temp(temp_dir)
+    with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX, dir=temp_dir) as directory:
         path = Path(directory) / f"cv{suffix}"  # a fixed name: the upload's own never touches disk
         path.write_bytes(content)
         try:
