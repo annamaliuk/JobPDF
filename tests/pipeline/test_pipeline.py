@@ -6,19 +6,19 @@ from pathlib import Path
 
 import pytest
 
+from jobpdf import pipeline
 from jobpdf.extraction.grounding import GroundingStatus
 from jobpdf.extraction.llm import FakeToolCaller, LLMResponseError, ToolCallResult
 from jobpdf.extraction.models import ParseError
 from jobpdf.normalization.match_cache import MatchTier, SkillMatch
 from jobpdf.normalization.service import ProfileSkills, ServiceVersions, profile_skill_paths
-from jobpdf.ranking.models import SkillRef, VacancyFeatures
-from jobpdf.ranking.score import LinearScorer, VacancyAdjustment
-from jobpdf.temp import pipeline
-from jobpdf.temp.pipeline import (
+from jobpdf.pipeline import (
     PipelineError,
     analyze_cv,
     classify_extraction_warning,
 )
+from jobpdf.ranking.models import SkillRef, VacancyFeatures
+from jobpdf.ranking.score import LinearScorer, VacancyAdjustment
 from tests.normalization.fakes import FakeEmbedder
 
 FIXTURES = Path(__file__).parents[1] / "extraction" / "fixtures"
@@ -220,7 +220,9 @@ def test_parser_reasons_pass_through_unchanged(reason, monkeypatch) -> None:
     assert err.code == reason and "secret" not in str(err)
 
 
-def test_the_upload_is_parsed_from_a_private_file_that_is_always_removed(monkeypatch) -> None:
+def test_the_upload_is_parsed_from_a_private_file_that_is_always_removed(
+    monkeypatch, temp_dir
+) -> None:
     seen: list[Path] = []
     real = pipeline.parse
 
@@ -236,10 +238,12 @@ def test_the_upload_is_parsed_from_a_private_file_that_is_always_removed(monkeyp
         run(content=b"not a pdf at all")
 
     assert [p.name for p in seen] == ["cv.pdf", "cv.pdf"]  # the upload's own name is not used
+    assert all(p.parent.parent == temp_dir for p in seen)  # inside the temp folder
     assert all(not p.exists() and not p.parent.exists() for p in seen)
+    assert list(temp_dir.iterdir()) == []
 
 
-def test_the_file_is_removed_even_when_a_stage_blows_up(monkeypatch) -> None:
+def test_the_file_is_removed_even_when_a_stage_blows_up(monkeypatch, temp_dir) -> None:
     seen: list[Path] = []
 
     def explode(path):
@@ -251,15 +255,78 @@ def test_the_file_is_removed_even_when_a_stage_blows_up(monkeypatch) -> None:
     with pytest.raises(RuntimeError):
         run()
 
-    assert not seen[0].parent.exists()
+    assert not seen[0].parent.exists() and list(temp_dir.iterdir()) == []
 
 
 def test_nothing_is_written_to_the_working_directory(tmp_path, monkeypatch) -> None:
-    monkeypatch.chdir(tmp_path)
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
 
     run()
 
-    assert list(tmp_path.iterdir()) == []  # in particular, no extraction cache
+    assert list(work.iterdir()) == []  # in particular, no extraction cache
+
+
+def test_the_default_temp_folder_is_jobpdf_temp(monkeypatch) -> None:
+    import jobpdf
+
+    monkeypatch.undo()  # drop the fixture's redirect to see the real default
+
+    assert pipeline.TEMP_DIR == Path(jobpdf.__file__).parent / "temp"
+
+
+def test_the_temp_folder_is_created_on_demand(temp_dir) -> None:
+    assert not temp_dir.exists()
+
+    run()
+
+    assert temp_dir.is_dir() and list(temp_dir.iterdir()) == []
+
+
+def test_an_explicit_temp_dir_wins(tmp_path) -> None:
+    other = tmp_path / "elsewhere"
+
+    run(temp_dir=other)
+
+    assert other.is_dir()
+
+
+def test_stale_upload_directories_are_swept_but_fresh_and_foreign_ones_stay(
+    temp_dir,
+) -> None:
+    import os
+    import time
+
+    temp_dir.mkdir()
+    stale, fresh, foreign = (temp_dir / "jobpdf-cv-old", temp_dir / "jobpdf-cv-new",
+                             temp_dir / "keep-me")
+    for folder in (stale, fresh, foreign):
+        folder.mkdir()
+        (folder / "cv.pdf").write_bytes(b"x")
+    (temp_dir / ".gitkeep").write_text("")
+    old = time.time() - pipeline.STALE_AFTER_SECONDS - 60
+    os.utime(stale, (old, old))
+    os.utime(foreign, (old, old))
+
+    run()  # every call sweeps first
+
+    assert not stale.exists()
+    assert fresh.exists() and foreign.exists() and (temp_dir / ".gitkeep").exists()
+
+
+def test_remove_stale_temp_reports_how_many(temp_dir) -> None:
+    import os
+    import time
+
+    temp_dir.mkdir()
+    for name in ("jobpdf-cv-a", "jobpdf-cv-b"):
+        (temp_dir / name).mkdir()
+        old = time.time() - 7200
+        os.utime(temp_dir / name, (old, old))
+
+    assert pipeline.remove_stale_temp(temp_dir) == 2
+    assert pipeline.remove_stale_temp(temp_dir) == 0
 
 
 def test_the_extraction_cache_is_never_used(monkeypatch) -> None:
