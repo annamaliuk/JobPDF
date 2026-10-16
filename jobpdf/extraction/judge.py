@@ -22,7 +22,7 @@ from typing import Literal
 from pydantic import Field, ValidationError
 
 from jobpdf.extraction.grounding import GroundingStatus, ground
-from jobpdf.extraction.llm import AnthropicToolCaller, ToolCaller, ToolCallResult
+from jobpdf.extraction.llm import ToolCaller, ToolCallResult, default_caller
 from jobpdf.extraction.models import ParsedDocument, Section
 from jobpdf.extraction.prompt import MASK_CHAR, build_user_message, mask_pii
 from jobpdf.extraction.schema import CandidateProfile, Quote, _LLMModel, tool_schema
@@ -191,10 +191,10 @@ def judge_profile(
 ) -> JudgeResult:
     """Ask the judge about one extraction and check what it says.
 
-    ``caller=None`` means the real Anthropic API (``JUDGE_MODEL`` is not read
-    here; the script passes a caller built with it).
+    ``caller=None`` means the real API of LLM_PROVIDER (``JUDGE_MODEL`` is not
+    read here; the script passes a caller built with it).
     """
-    caller = caller if caller is not None else AnthropicToolCaller()
+    caller = caller if caller is not None else default_caller()
     user = build_judge_message(doc, sections, profile)
     tool = judge_tool()
     usage = [0, 0]

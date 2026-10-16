@@ -1,9 +1,10 @@
 """LLM access behind one small interface (JM-11).
 
-Every LLM call in the project goes through ``ToolCaller``: Anthropic (real),
-Fake (scripted, for tests), Replay (recorded responses), Recording (wraps a
-real caller to produce replay fixtures) and ReplayOrRecord (the offline-first
-mix the evaluation scripts use). Tests never touch the network.
+Every LLM call in the project goes through ``ToolCaller``: Anthropic and Gemini
+(real; ``LLM_PROVIDER`` picks one, see ``default_caller``), Fake (scripted, for
+tests), Replay (recorded responses), Recording (wraps a real caller to produce
+replay fixtures) and ReplayOrRecord (the offline-first mix the evaluation
+scripts use). Tests never touch the network.
 """
 
 from __future__ import annotations
@@ -18,12 +19,19 @@ from typing import Any, Protocol
 from jobpdf.extraction.prompt import PROMPT_VERSION
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 # The SDK itself retries connection errors, 408, 409, 429 and 5xx with backoff.
 MAX_RETRIES = 3
+# Gemini's free tier answers 429 as soon as its per-minute quota is used up, so
+# its retries wait longer than the SDK default.
+GEMINI_RETRY_ATTEMPTS = 6
+GEMINI_RETRY_MAX_DELAY_S = 60.0
+PROVIDERS = ("anthropic", "gemini")
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class MissingAPIKeyError(RuntimeError):
-    """No ANTHROPIC_API_KEY: live LLM calls are impossible (keys arrive with JM-35)."""
+    """No API key for the chosen provider: live LLM calls are impossible (JM-35)."""
 
 
 class LLMResponseError(RuntimeError):
@@ -97,6 +105,133 @@ class AnthropicToolCaller:
             output_tokens=response.usage.output_tokens,
             model=response.model,
         )
+
+
+class GeminiToolCaller:
+    """Forced function calling via the Google Gen AI SDK (Gemini API).
+
+    ``mode="ANY"`` with one allowed function is Gemini's equivalent of a forced
+    ``tool_choice``. The tool's JSON schema is passed as is through
+    ``parameters_json_schema``. Free-tier requests may be used by Google to
+    improve its products; CV text is masked before it gets here.
+    """
+
+    def __init__(self, model: str | None = None, api_key: str | None = None) -> None:
+        key = api_key or os.environ.get("GEMINI_API_KEY")
+        if not key:
+            raise MissingAPIKeyError(
+                "GEMINI_API_KEY is not set, so LLM_PROVIDER=gemini cannot call the LLM. "
+                "Create a key in Google AI Studio and put GEMINI_API_KEY=... into your "
+                "local .env or the environment."
+            )
+        from google import genai  # deferred like anthropic above
+        from google.genai import types
+
+        self._types = types
+        self.model = model or os.environ.get("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL
+        retry = types.HttpRetryOptions(
+            attempts=GEMINI_RETRY_ATTEMPTS, max_delay=GEMINI_RETRY_MAX_DELAY_S
+        )
+        self._client = genai.Client(
+            api_key=key, http_options=types.HttpOptions(retry_options=retry)
+        )
+
+    def call(self, *, system: str, user: str, tool: dict, max_tokens: int) -> ToolCallResult:
+        types = self._types
+        declaration = types.FunctionDeclaration(
+            name=tool["name"],
+            description=tool["description"],
+            parameters_json_schema=tool["input_schema"],
+        )
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            temperature=0,
+            max_output_tokens=max_tokens,
+            tools=[types.Tool(function_declarations=[declaration])],
+            tool_config=types.ToolConfig(
+                function_calling_config=types.FunctionCallingConfig(
+                    mode="ANY", allowed_function_names=[tool["name"]]
+                )
+            ),
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        )
+        response = self._client.models.generate_content(
+            model=self.model, contents=user, config=config
+        )
+        finish = _gemini_finish_reason(response)
+        call = next(
+            (c for c in response.function_calls or [] if c.name == tool["name"]), None
+        )
+        # Mapped to the Anthropic spelling, which the extractor's retry checks for.
+        stop_reason = "max_tokens" if finish == "MAX_TOKENS" else (finish or "").lower()
+        if call is None and stop_reason != "max_tokens":
+            raise LLMResponseError(
+                f"Expected a {tool['name']!r} function call, got none "
+                f"(finish_reason={finish!r})"
+            )
+        usage = response.usage_metadata
+        return ToolCallResult(
+            tool_input=dict(call.args or {}) if call is not None else {},
+            stop_reason=stop_reason,
+            input_tokens=(usage.prompt_token_count or 0) if usage else 0,
+            output_tokens=(usage.candidates_token_count or 0) if usage else 0,
+            model=response.model_version or self.model,
+        )
+
+
+def _gemini_finish_reason(response: Any) -> str | None:
+    candidates = response.candidates or []
+    reason = candidates[0].finish_reason if candidates else None
+    return getattr(reason, "name", None) or (str(reason) if reason else None)
+
+
+def provider() -> str:
+    """The provider named by LLM_PROVIDER (default "anthropic")."""
+    name = (os.environ.get("LLM_PROVIDER") or "anthropic").strip().lower()
+    if name not in PROVIDERS:
+        raise ValueError(f"LLM_PROVIDER must be one of {PROVIDERS}, got {name!r}")
+    return name
+
+
+def default_caller(model: str | None = None) -> ToolCaller:
+    """The real caller for LLM_PROVIDER; raises MissingAPIKeyError without its key."""
+    if provider() == "gemini":
+        return GeminiToolCaller(model=model)
+    return AnthropicToolCaller(model=model)
+
+
+def api_errors() -> tuple[type[Exception], ...]:
+    """The SDK errors that mean a live call failed, for the chosen provider."""
+    if provider() == "gemini":
+        from google.genai import errors
+
+        return (errors.APIError,)
+    import anthropic
+
+    return (anthropic.APIError,)
+
+
+def load_env_file(env_file: Path = ENV_FILE) -> list[str]:
+    """Copy KEY=VALUE lines of a .env file into ``os.environ``; returns the names set.
+
+    For the offline scripts only, so a key kept in the repo's gitignored .env
+    works without exporting it. A variable already in the environment always
+    wins, and empty values are skipped. Values are never logged.
+    """
+    try:
+        lines = env_file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    loaded = []
+    for line in lines:
+        if line.lstrip().startswith("#"):
+            continue
+        key, sep, value = line.strip().partition("=")
+        key, value = key.strip(), value.strip().strip("'\"")
+        if sep and key and value and not os.environ.get(key):
+            os.environ[key] = value
+            loaded.append(key)
+    return loaded
 
 
 @dataclass

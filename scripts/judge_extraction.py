@@ -11,13 +11,17 @@ reasons. Per-CV verdicts with reasons, for the human spot check, go to
 --verdicts (default under gitignored data/eval/), keyed by file name.
 
 Replay mode (default) is offline and serves responses recorded by an earlier
-live run, skipping CVs without one. Live mode calls the Anthropic API (needs
-ANTHROPIC_API_KEY) and records every response, so a re-run never pays twice.
-JUDGE_MODEL picks the judge's model; extraction keeps ANTHROPIC_MODEL.
+live run, skipping CVs without one. Live mode calls the API of LLM_PROVIDER
+("anthropic", the default, needs ANTHROPIC_API_KEY; "gemini" needs
+GEMINI_API_KEY) and records every response, so a re-run never pays twice.
+Keys and LLM_PROVIDER may sit in the repo's gitignored .env. JUDGE_MODEL picks
+the judge's model; extraction keeps ANTHROPIC_MODEL or GEMINI_MODEL.
 
 Usage (from the repo root):
     uv run python scripts/judge_extraction.py
     uv run python scripts/judge_extraction.py --mode live --limit 3
+    LLM_PROVIDER=gemini JUDGE_MODEL=gemini-2.5-pro \\
+        uv run python scripts/judge_extraction.py --mode live
     uv run python scripts/judge_extraction.py --mode live \\
         --dataturks "data/external/dataturks/Entity Recognition in Resumes.json"
 """
@@ -54,13 +58,17 @@ from jobpdf.extraction.judge_calibration import (
     plant_report,
 )
 from jobpdf.extraction.llm import (
-    AnthropicToolCaller,
+    ENV_FILE,
     LLMResponseError,
     MissingAPIKeyError,
     ReplayMissError,
     ReplayOrRecord,
     ReplayToolCaller,
     ToolCaller,
+    api_errors,
+    default_caller,
+    load_env_file,
+    provider,
 )
 from jobpdf.extraction.models import ParseError
 from jobpdf.extraction.plaintext import from_plain_text
@@ -73,13 +81,16 @@ DEFAULT_OUT = Path("data/eval/judge/report.json")
 DEFAULT_VERDICTS = Path("data/eval/judge/verdicts")
 DEFAULT_DATATURKS_LIMIT = 20
 SUFFIXES = (".pdf", ".docx")
+KEY_NAMES = {"anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY"}
 _SKIPPABLE = (ReplayMissError, ExtractionError, JudgeError, LLMResponseError)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    if args.mode == "live" and not os.environ.get("ANTHROPIC_API_KEY"):
-        _error("--mode live needs ANTHROPIC_API_KEY in the environment; nothing was sent.")
+    load_env_file(args.env_file)
+    key_name = KEY_NAMES[provider()]
+    if args.mode == "live" and not os.environ.get(key_name):
+        _error(f"--mode live needs {key_name} in the environment or .env; nothing was sent.")
         return 2
     if not args.input.is_dir():
         _error(f"input folder not found: {args.input}")
@@ -87,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         extractor, judge, api_errors = _callers(args)
     except MissingAPIKeyError:
-        _error("ANTHROPIC_API_KEY is not set; nothing was sent.")
+        _error(f"{key_name} is not set; nothing was sent.")
         return 2
 
     files = sorted(
@@ -108,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         dataturks = _dataturks(args, extractor, judge, skipped, models)
     except api_errors as exc:
         _error(
-            f"Anthropic API call failed ({type(exc).__name__}); responses recorded so far "
+            f"LLM API call failed ({type(exc).__name__}); responses recorded so far "
             f"are kept in {args.recordings}."
         )
         return 3
@@ -243,6 +254,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--dataturks-limit", type=int, default=DEFAULT_DATATURKS_LIMIT)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--verdicts", type=Path, default=DEFAULT_VERDICTS)
+    parser.add_argument("--env-file", type=Path, default=ENV_FILE,
+                        help="KEY=VALUE file read for API keys and LLM_PROVIDER")
     return parser.parse_args(argv)
 
 
@@ -256,12 +269,10 @@ def _callers(
     """
     if args.mode == "replay":
         return ReplayToolCaller(args.recordings), ReplayToolCaller(args.recordings), ()
-    import anthropic  # deferred like in llm.py: replay mode stays offline and cheap
-
-    extractor = ReplayOrRecord(AnthropicToolCaller(), args.recordings)
+    extractor = ReplayOrRecord(default_caller(), args.recordings)
     judge_model = os.environ.get("JUDGE_MODEL") or None
-    judge = ReplayOrRecord(AnthropicToolCaller(model=judge_model), args.recordings)
-    return extractor, judge, (anthropic.APIError,)
+    judge = ReplayOrRecord(default_caller(model=judge_model), args.recordings)
+    return extractor, judge, api_errors()
 
 
 def _natural(path: Path) -> tuple[int, str]:

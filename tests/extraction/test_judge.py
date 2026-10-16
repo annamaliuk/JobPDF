@@ -398,7 +398,8 @@ def recordings(tmp_path: Path, input_dir: Path) -> Path:
 def run(tmp_path: Path, input_dir: Path, recordings: Path, *extra: str):
     out = tmp_path / "report.json"
     code = runner.main(["--input", str(input_dir), "--recordings", str(recordings),
-                        "--out", str(out), "--verdicts", str(tmp_path / "verdicts"), *extra])
+                        "--out", str(out), "--verdicts", str(tmp_path / "verdicts"),
+                        "--env-file", str(tmp_path / "no.env"), *extra])
     return code, json.loads(out.read_text(encoding="utf-8")) if out.is_file() else None
 
 
@@ -433,3 +434,14 @@ def test_replay_skips_files_without_recordings(tmp_path: Path, input_dir: Path) 
 def test_live_without_key_sends_nothing(tmp_path: Path, input_dir: Path) -> None:
     code, report = run(tmp_path, input_dir, tmp_path / "rec", "--mode", "live")
     assert code == 2 and report is None
+
+
+def test_live_gemini_reads_its_key_from_the_env_file(tmp_path: Path, input_dir: Path,
+                                                     monkeypatch, capsys) -> None:
+    env = tmp_path / "keys.env"
+    env.write_text("LLM_PROVIDER=gemini\n", encoding="utf-8")
+    out = tmp_path / "report.json"
+    code = runner.main(["--input", str(input_dir), "--mode", "live", "--env-file", str(env),
+                        "--out", str(out)])
+    assert code == 2 and not out.exists()
+    assert "GEMINI_API_KEY" in capsys.readouterr().err
