@@ -21,6 +21,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from jobpdf.normalization.service import INDEX_UNAVAILABLE_VERSION
 from jobpdf.ranking.models import RANKING_VERSION
 from jobpdf.ranking.ranking_eval import (
     CURRENT,
@@ -61,6 +62,11 @@ def main(argv: list[str] | None = None, *, embedder=None, normalizer=None) -> in
     if args.mode == "real" and normalizer is None:
         from jobpdf.normalization.service import get_normalization_service
         normalizer = get_normalization_service()
+    versions = getattr(normalizer, "versions", None)
+    if args.mode == "real" and versions is not None and versions.index == INDEX_UNAVAILABLE_VERSION:
+        print("real mode needs the skill index: set DATABASE_URL, run build_taxonomy.py and "
+              "build_index.py, then retry", file=sys.stderr)
+        return 2
 
     pairs = build_pairs(dataset, args.mode, embedder=None if args.no_semantic else embedder,
                         normalizer=normalizer, calibration=calibration)

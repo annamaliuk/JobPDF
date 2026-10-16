@@ -32,12 +32,13 @@ from jobpdf.ranking.semantic import (
 
 log = logging.getLogger(__name__)
 
-# Weights and thresholds are provisional; JM-26 tunes them on JM-25's dataset.
+# JM-26 (scripts/eval_ranking.py, perfect mode on JM-25's pairs) found no held-out gain
+# from other weights or thresholds, so these stay; the real-normalization run is pending.
 W_SKILL = 0.7
 W_SEMANTIC = 0.3
 STRONG_COVERAGE = 0.8  # share of required skills for "strong"
 PARTIAL_COVERAGE = 0.5  # share of required skills for "partial"
-SEM_MIN = 0.3  # on JM-23's calibrated 0..1 scale; provisional, JM-26 tunes it
+SEM_MIN = 0.3  # on JM-23's calibrated 0..1 scale
 
 # Warning codes on a FitResult.
 SEMANTIC_MISSING = "semantic_missing"

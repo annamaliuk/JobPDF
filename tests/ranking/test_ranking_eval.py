@@ -212,3 +212,22 @@ def test_script_prints_numbers_and_writes_the_report_under_its_mode(
     assert "Engineer" not in printed
     assert stored["raw"]["provenance"]["dataset_files"]["pairs.jsonl"]
     assert stored["raw"]["has_semantic"] is False
+
+
+def test_script_refuses_real_mode_without_the_index(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spec = importlib.util.spec_from_file_location("eval_ranking",
+                                                  ROOT / "scripts" / "eval_ranking.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    normalizer = FakeNormalizer()
+    normalizer.versions = SimpleNamespace(index="unavailable")
+    results = tmp_path / "ranking_eval.json"
+
+    code = module.main(["--mode", "real", "--no-semantic", "--write", "--results",
+                        str(results)], normalizer=normalizer)
+
+    assert code == 2
+    assert "skill index" in capsys.readouterr().err
+    assert not results.exists()
