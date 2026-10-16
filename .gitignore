@@ -23,3 +23,7 @@ data/taxonomy/*
 # their recordings/reports never leave the machine
 data/external/
 data/eval/
+
+# JM-28: uploads are written here while they are parsed, then deleted
+jobpdf/temp/*
+!jobpdf/temp/.gitkeep
