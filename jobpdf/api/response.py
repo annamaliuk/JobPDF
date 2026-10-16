@@ -2,8 +2,9 @@
 
 ``build_response(result)`` turns the pipeline's internal ``PipelineResult`` (JM-28) into
 ``AnalysisResponse``: the profile, ranked matches with bands, score components and
-matched / missing skills, insights, warnings as ``code`` + ``detail``, and the versions
-that produced them. It holds no HTTP, auth or file handling (JM-30, the app tickets).
+matched / missing skills, insights (JM-42, converted by ``insights_out``), warnings as
+``code`` + ``detail``, and the versions that produced them. It holds no HTTP, auth or
+file handling (JM-30, the app tickets).
 
 Why a separate model. The internal result carries quotes, grounding offsets and scorer
 internals that callers should not depend on. This contract is the public one: models are
@@ -31,6 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from jobpdf.normalization.match_cache import SkillMatch
 from jobpdf.normalization.service import ServiceVersions
 from jobpdf.pipeline import PipelineResult, PipelineVersions
+from jobpdf.ranking.insights import InsightsResult
 from jobpdf.ranking.models import SkillRef
 from jobpdf.ranking.score import Band, FitResult
 
@@ -206,20 +208,36 @@ class Pagination(_Frozen):
 class WithinReach(_Frozen):
     vacancy_id: str
     missing: list[SkillOut]  # the one or two skills between the CV and a strong fit
+    fit_now: float | None = None
+    fit_after: float | None = None  # the fit with ``missing`` added
+    required_matched_count: int | None = None  # required skills the CV has now
+    required_count: int | None = None
 
 
 class SkillToLearn(_Frozen):
     skill: SkillOut
     unlocks: int  # strong matches this skill would add
-    vacancy_ids: list[str]
+    vacancy_ids: list[str]  # the vacancies it would make strong
+    required_in: int | None = None  # how many of the closest vacancies require it
+
+
+class InDemand(_Frozen):
+    skill: SkillOut
+    count: int  # how many of the closest vacancies require it
 
 
 class Insights(_Frozen):
-    """Filled by JM-42; empty (``computed=False``) until then. The shape is a proposal."""
+    """JM-42's insights (``jobpdf.ranking.insights``), built by ``insights_out``.
+
+    Empty with ``computed=False`` when they were not computed. ``working_set_size`` is
+    how many of the closest vacancies they look at ("of your 50 closest").
+    """
 
     computed: bool = False
+    working_set_size: int | None = None
     within_reach: list[WithinReach] = Field(default_factory=list)
     skills_to_learn: list[SkillToLearn] = Field(default_factory=list)
+    in_demand: list[InDemand] = Field(default_factory=list)
 
 
 class Scoring(_Frozen):
@@ -309,6 +327,28 @@ def build_response(
         versions=_versions(result.versions),
         meta=Meta(timings_ms=dict(result.timings_ms), input_tokens=result.input_tokens,
                   output_tokens=result.output_tokens),
+    )
+
+
+def insights_out(result: InsightsResult) -> Insights:
+    """The public form of JM-42's insights."""
+    return Insights(
+        computed=True,
+        working_set_size=result.working_set_size,
+        within_reach=[
+            WithinReach(vacancy_id=i.vacancy_id, missing=[skill_from_ref(r) for r in i.added],
+                        fit_now=i.fit_now, fit_after=i.fit_after,
+                        required_matched_count=i.required_matched_count,
+                        required_count=i.required_count)
+            for i in result.within_reach
+        ],
+        skills_to_learn=[
+            SkillToLearn(skill=skill_from_ref(i.skill), unlocks=i.gain,
+                         vacancy_ids=list(i.vacancy_ids), required_in=i.frequency)
+            for i in result.skills_to_learn
+        ],
+        in_demand=[InDemand(skill=skill_from_ref(i.skill), count=i.count)
+                   for i in result.in_demand],
     )
 
 
