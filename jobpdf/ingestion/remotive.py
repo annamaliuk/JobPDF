@@ -308,6 +308,13 @@ def fetch_postings(
     return _result(cached, from_cache=True, stale=True, warnings=[STALE_CACHE, reason])
 
 
+def read_cache(*, base: Path | None = None) -> FetchResult | None:
+    """The newest usable cached response, of any age, or None. Never makes a request:
+    ingestion reads what the fetch job already stored."""
+    cached = _latest_cache(cache_dir(base))
+    return None if cached is None else _result(cached, from_cache=True, stale=False, warnings=[])
+
+
 def _live_fetch(folder: Path, now: float, transport: Transport) -> ParsedFeed | str:
     """A parsed feed (already cached on disk), or the code of why there is none."""
     times = _read_ledger(folder, now)
