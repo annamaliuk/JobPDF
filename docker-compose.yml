@@ -1,14 +1,52 @@
-# Local Postgres + pgvector for the skill index (JM-17).
-# JM-36 adds the app and Airflow services; JM-38 adds tables.
+# JobPDF on one machine (JM-17 database, JM-36 app, proxy and Airflow).
+#
+#   docker compose up -d --build                  db + app + proxy
+#   docker compose --profile airflow up -d        also the Airflow scheduler and web UI
+#   docker compose run --rm tools python scripts/<script>.py     one-off scripts
+#
+# The README has the full first-time setup. Everything reads its settings from .env; the
+# containers get only the variables they need, and DATABASE_URL here points at the "db"
+# service, whatever .env says for a script run on your own machine.
+
+x-database-url: &database-url
+  DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+
+x-jobpdf-env: &jobpdf-env
+  <<: *database-url
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  JOBPDF_SCORER: ${JOBPDF_SCORER:-linear}
+  HF_HUB_OFFLINE: "1"
+
+x-ingestion-env: &ingestion-env
+  THE_MUSE_API_KEY: ${THE_MUSE_API_KEY:-}
+  ADZUNA_APP_ID: ${ADZUNA_APP_ID:-}
+  ADZUNA_APP_KEY: ${ADZUNA_APP_KEY:-}
+  ADZUNA_COUNTRY: ${ADZUNA_COUNTRY:-}
+  ADZUNA_QUERY: ${ADZUNA_QUERY:-}
+  JOOBLE_API_KEY: ${JOOBLE_API_KEY:-}
+  JOOBLE_KEYWORDS: ${JOOBLE_KEYWORDS:-}
+  JOOBLE_LOCATION: ${JOOBLE_LOCATION:-}
+
+x-app-build: &app-build
+  context: .
+  target: app
+
+# Files in ./data (taxonomy, fetch cache) are written by these containers, so they run as the
+# host user: put APP_UID=$(id -u) in .env. Group 0 is what Airflow's image expects.
+x-user: &user ${APP_UID:-1000}:0
+
 services:
   db:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    # Loopback only: on a server the database must never be reachable from the internet.
+    # Scripts on this machine still connect to localhost:${POSTGRES_PORT}.
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     # HNSW index builds use shared memory; Docker's default 64 MB /dev/shm fails
@@ -20,5 +58,149 @@ services:
       timeout: 5s
       retries: 10
 
+  app:
+    build: *app-build
+    image: jobpdf-app
+    restart: unless-stopped
+    user: *user
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *jobpdf-env
+      JOBPDF_API_KEYS: ${JOBPDF_API_KEYS:-}
+      JOBPDF_RATE_LIMIT_SECRET: ${JOBPDF_RATE_LIMIT_SECRET:-}
+    volumes:
+      - ./data:/app/data
+    # CVs are written here while they are parsed and deleted straight after; in memory only.
+    tmpfs:
+      - /app/jobpdf/temp:mode=1777
+      - /tmp
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    expose: ["8000"]
+    healthcheck:
+      # 200 for ok and degraded, 503 for down: urlopen raises on 503, so "unhealthy" = down.
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=8)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s  # loading the embedding model and the skill index
+
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [app]
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # One-off scripts: docker compose run --rm tools python scripts/build_index.py
+  tools:
+    profiles: [tools]
+    build: *app-build
+    image: jobpdf-app
+    user: *user
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: [*jobpdf-env, *ingestion-env]
+    volumes:
+      - ./data:/app/data
+    entrypoint: []
+    command: ["python", "-c", "print('use: docker compose run --rm tools python scripts/<script>.py')"]
+
+  # --- Airflow (profile "airflow") -----------------------------------------------------------
+  airflow-init:
+    profiles: [airflow]
+    build: &airflow-build
+      context: .
+      target: airflow
+    image: jobpdf-airflow
+    user: *user
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: &airflow-env
+      <<: [*jobpdf-env, *ingestion-env]
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
+        postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/airflow
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-}
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "false"
+      AIRFLOW_HOME: /opt/airflow
+      HOME: /opt/airflow
+    volumes:
+      - ./data:/app/data
+      - airflow_home:/opt/airflow
+    # Airflow keeps its own metadata in a second database on the same server. Creating it here
+    # (instead of in an init script) also works on a Postgres volume that already exists.
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        for name in AIRFLOW__WEBSERVER__SECRET_KEY AIRFLOW_ADMIN_PASSWORD; do
+          if [ -z "$${!name}" ]; then
+            echo "set AIRFLOW_SECRET_KEY and AIRFLOW_ADMIN_PASSWORD in .env first" >&2
+            exit 1
+          fi
+        done
+        python - <<'PY'
+        import os, psycopg
+        url = os.environ["DATABASE_URL"]
+        with psycopg.connect(url, autocommit=True) as conn:
+            if not conn.execute("SELECT 1 FROM pg_database WHERE datname = 'airflow'").fetchone():
+                conn.execute("CREATE DATABASE airflow")
+                print("created database airflow")
+        PY
+        airflow db migrate
+        airflow users create --role Admin --username admin --firstname Admin --lastname Admin \
+          --email admin@localhost --password "$$AIRFLOW_ADMIN_PASSWORD" || true
+
+  airflow-scheduler:
+    profiles: [airflow]
+    build: *airflow-build
+    image: jobpdf-airflow
+    restart: unless-stopped
+    user: *user
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment: *airflow-env
+    volumes:
+      - ./data:/app/data
+      - airflow_home:/opt/airflow
+    command: ["scheduler"]
+
+  airflow-webserver:
+    profiles: [airflow]
+    build: *airflow-build
+    image: jobpdf-airflow
+    restart: unless-stopped
+    user: *user
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment: *airflow-env
+    volumes:
+      - airflow_home:/opt/airflow
+    # Loopback only; reach it through an SSH tunnel (ssh -L 8080:localhost:8080 server).
+    ports:
+      - "127.0.0.1:8080:8080"
+    command: ["webserver"]
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:
+  airflow_home:
