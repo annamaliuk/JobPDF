@@ -1,0 +1,24 @@
+{
+  "description": "Synthetic candidate-vacancy pairs for ranking evaluation (JM-25). Grades come from construction, not from the scoring formula; see jobpdf/ranking/synthetic.py. All names and companies are fictional.",
+  "generator_version": "1",
+  "ranking_version": "1",
+  "seed": 25,
+  "vacancies_per_family": 5,
+  "counts": {
+    "vacancies": 40,
+    "candidates": 20,
+    "pairs": 800
+  },
+  "grade_counts": {
+    "0": 650,
+    "1": 60,
+    "2": 47,
+    "3": 43
+  },
+  "files": {
+    "vacancies.jsonl": "555c907168e276322c30481f27060ce93955480164690a81559c456b7f8abbdb",
+    "candidates.jsonl": "e9d30b3095e86f713f6385a2f9dbc54afd763d196b8980bc8009f0f7cdf8c4b7",
+    "pairs.jsonl": "a50c5ce285c6343c474d981f7bebedb2e5068cbc36a505520f614c6a013579b7",
+    "truth.json": "2da6807258e564a372a326b8fb74200d799532673f503e7e51d959e9c80c5780"
+  }
+}

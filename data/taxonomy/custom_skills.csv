@@ -46,11 +46,11 @@ jobpdf:skill/apache-kafka,,kafka,en
 jobpdf:skill/rust,Rust (programming language),rust,en
 jobpdf:skill/django,Django,django,en
 jobpdf:skill/redis,Redis,redis,en
-http://data.europa.eu/esco/skill/8770350e-746f-4adb-9556-18ca68104be6,Market Research,market research,en
+http://data.europa.eu/esco/skill/8770350e-746f-4adb-9556-18ca68104be6,,market research,en
 http://data.europa.eu/esco/skill/8770350e-746f-4adb-9556-18ca68104be6,,market & product research,en
 http://data.europa.eu/esco/skill/8770350e-746f-4adb-9556-18ca68104be6,,market analysis,en
 jobpdf:skill/ai-workflows,AI workflows,ai workflows,en
-jobpdf:skill/ai-workflows,AI automation,ai automation,en
+jobpdf:skill/ai-workflows,,ai automation,en
 jobpdf:skill/similarweb,SimilarWeb,similarweb,en
 jobpdf:skill/appmagic,AppMagic,appmagic,en
 jobpdf:skill/sensortower,SensorTower,sensortower,en
@@ -78,11 +78,9 @@ jobpdf:skill/blockchain,Blockchain,blockchain,en
 jobpdf:skill/tableau,Tableau,tableau,en
 jobpdf:skill/dotnet,.NET,.net,en
 jobpdf:skill/bootstrap,Bootstrap,bootstrap,en
-jobpdf:skill/unix,UNIX,unix,en
 jobpdf:skill/angular,Angular,angular,en
 jobpdf:skill/windsurf,Windsurf,windsurf,en
 jobpdf:skill/selenium,Selenium,selenium,en
-jobpdf:skill/aws,AWS,aws,en
 jobpdf:skill/elk,ELK,elk,en
 jobpdf:skill/grafana,Grafana,grafana,en
 jobpdf:skill/ubuntu,Ubuntu,ubuntu,en
@@ -104,15 +102,14 @@ jobpdf:skill/illustrator,Illustrator,illustrator,en
 jobpdf:skill/wix,Wix,wix,en
 jobpdf:skill/hypothesis-testing,Hypothesis testing,hypothesis testing,en
 jobpdf:skill/amplitude,Amplitude,amplitude,en
-jobpdf:skill/google-analytics,GA4,ga4,en
+jobpdf:skill/google-analytics,,ga4,en
 jobpdf:skill/miro,Miro,miro,en
 jobpdf:skill/asana,Asana,asana,en
 jobpdf:skill/google-tag-manager,Google Tag Manager,google tag manager,en
-jobpdf:skill/google-tag-manager,GTM,gtm,en
+jobpdf:skill/google-tag-manager,,gtm,en
 jobpdf:skill/wireframing,Wireframing,wireframing,en
 jobpdf:skill/webflow,Webflow,webflow,en
 jobpdf:skill/n8n,n8n,n8n,en
-jobpdf:skill/excel,Excel,excel,en
 jobpdf:skill/openclaw,OpenClaw,openclaw,en
 jobpdf:skill/laravel,Laravel,laravel,en
 jobpdf:skill/shopify,Shopify,shopify,en
