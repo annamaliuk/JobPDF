@@ -13,10 +13,13 @@ on as its quote. Steps:
    Aliases of ESCO's non-digital skills ("innovation", "help customers") are "weak": they
    count only in requirement sections, because in company blurbs and duties they are
    ordinary words. Boilerplate sentences (equal opportunity, benefits, how to apply) are
-   never read.
+   never read. Skills offered as options ("AWS, Azure, or GCP", "(e.g. Jira, Confluence)")
+   are nice-to-have: the posting needs one of them, not each.
 3. Years, education and languages: regular expressions over requirement lines, skipping
    lines that only say "nice to have".
-4. Responsibilities: the lines of the responsibilities sections (bullets when there are).
+4. Responsibilities: the lines of the responsibilities sections (bullets when there are),
+   without pitch ("If you have a passion…", "We're looking for someone…") or lead-ins
+   ending in a colon.
 
 Word lists are deliberately plain; the human check (scripts/check_vacancy_requirements.py)
 is the place to find what they miss.
@@ -114,6 +117,24 @@ _REQUIREMENT_CUE = re.compile(
     r"looking for|ideal for|who can)\b",
     re.IGNORECASE,
 )
+# Cues that qualify only what follows them: "10+ years of leadership, ideally in SaaS".
+_FORWARD_CUE = re.compile(r"\b(?:ideally|preferably|idealerweise|bestenfalls)\b|бажано",
+                          re.IGNORECASE)
+# After these, a list gives examples or options ("tools (e.g. Jira, Confluence)").
+_EXAMPLES = re.compile(
+    r"\b(?:e\.g|for example|for instance|such as|z\.\s?b|zum beispiel|any one of|one of|"
+    r"any of)\b\.?|наприклад",
+    re.IGNORECASE,
+)
+_EXAMPLES_END = re.compile(r"[);]")
+# "SQL, Oracle, Linux, or Windows", "PostgreSQL (or MySQL)": one of the items is enough.
+_WORD = r"(?!(?:and|und|та|і)\b)[\w+#./\-'’]+"
+_ITEM = rf"{_WORD}(?: {_WORD}){{0,2}}"  # up to three words
+_OR_LIST = re.compile(
+    rf"(?:{_ITEM}\s*,\s*)*{_ITEM}\s*,?\s*\(?\s*\b(?:or|oder|або|чи)\b\s+{_ITEM}"
+    r"(?=\s*(?:[,;:().]|$|\b(?:is|are|would|and)\b))",
+    re.IGNORECASE,
+)
 _CLAUSE = re.compile(r"\s*[,;]\s*|\s+but\s+")
 
 # Real skills that are also everyday words: they need a capital and another skill nearby.
@@ -199,6 +220,25 @@ def is_boilerplate(sentence: str) -> bool:
     return bool(_BOILERPLATE.search(sentence))
 
 
+def preference_start(sentence: str) -> int | None:
+    """Where a sentence starts stating a preference: 0 for "Docker is a plus", the cue's
+    position for "10+ years of leadership, ideally in SaaS"; None when it states none."""
+    forward = _FORWARD_CUE.search(sentence)
+    rest = sentence if forward is None else sentence[:forward.start()] + sentence[forward.end():]
+    if has_preferred_cue(rest):
+        return 0
+    return forward.start() if forward else None
+
+
+def option_spans(sentence: str) -> list[tuple[int, int]]:
+    """Character spans of a sentence that list examples or alternatives."""
+    spans = [m.span() for m in _OR_LIST.finditer(sentence)]
+    for m in _EXAMPLES.finditer(sentence):
+        end = _EXAMPLES_END.search(sentence, m.end())
+        spans.append((m.end(), end.start() if end else len(sentence)))
+    return spans
+
+
 def has_requirement_cue(sentence: str) -> bool:
     return bool(_REQUIREMENT_CUE.search(sentence))
 
@@ -278,8 +318,8 @@ class SkillVocabulary:
         for sentence in sentences(text):
             if is_boilerplate(sentence):
                 continue
-            pref = preferred or has_preferred_cue(sentence)
-            hits += self._scan_sentence(sentence, pref)
+            hits += self._scan_sentence(sentence, preferred, preference_start(sentence),
+                                        option_spans(sentence))
         unambiguous = [h for h in hits if not _is_ambiguous(h.norm)]
         kept = [h for h in hits
                 if not _is_ambiguous(h.norm) or (_capitalised(h.text) and
@@ -292,27 +332,32 @@ class SkillVocabulary:
                 out.append(hit)
         return out
 
-    def _scan_sentence(self, sentence: str, preferred: bool) -> list[SkillHit]:
-        tokens = [_trim(t) for t in _TOKEN.findall(sentence)]
-        tokens = [t for t in tokens if t]
+    def _scan_sentence(self, sentence: str, preferred: bool, preference_from: int | None,
+                       options: list[tuple[int, int]]) -> list[SkillHit]:
+        found = [(_trim(m.group(0)), m.start()) for m in _TOKEN.finditer(sentence)]
+        found = [(t, at) for t, at in found if t]
+        tokens = [t for t, _ in found]
+
+        def hit(text: str, at: int) -> SkillHit:
+            norm = normalize(text)
+            pref = (preferred or (preference_from is not None and at >= preference_from)
+                    or any(start <= at < end for start, end in options))
+            return SkillHit(text, norm, sentence, pref, norm not in self.weak)
+
         hits: list[SkillHit] = []
         i = 0
         while i < len(tokens):
             for size in range(min(self.max_words, len(tokens) - i), 0, -1):
                 span = " ".join(tokens[i:i + size])
-                norm = normalize(span)
-                if norm in self.norms:
-                    hits.append(SkillHit(span, norm, sentence, preferred,
-                                         norm not in self.weak))
+                if normalize(span) in self.norms:
+                    hits.append(hit(span, found[i][1]))
                     i += size
                     break
             else:
                 if "/" in tokens[i]:  # "Python/Django": try each part
                     for part in tokens[i].split("/"):
-                        norm = normalize(part)
-                        if part and norm in self.norms:
-                            hits.append(SkillHit(part, norm, sentence, preferred,
-                                                 norm not in self.weak))
+                        if part and normalize(part) in self.norms:
+                            hits.append(hit(part, found[i][1]))
                 i += 1
         return hits
 
@@ -473,11 +518,27 @@ def _language_word(word: str) -> bool:
 # --- responsibilities ---------------------------------------------------------------
 
 
+# Lines that sell the job instead of describing it.
+_PITCH = re.compile(
+    r"^(?:we(?:'|’)?re|we are) (?:looking|hiring|seeking|searching)\b|^if you\b|"
+    r"\bthis is (?:the|a|an|not)\b(?: [\w-]+){0,4} (?:position|role|job)\b|^this role\b|"
+    r"^since this\b|\bwhat sets this role apart\b|^(?:you(?:'|’)ll|you will) join\b|"
+    r"^join (?:us|our)\b",
+    re.IGNORECASE,
+)
+
+
+def is_pitch(text: str) -> bool:
+    return bool(_PITCH.search(text))
+
+
 def responsibilities_of(lines: Sequence[SectionLine]) -> list[str]:
-    """Lines of the responsibilities sections; only their bullets when they have any."""
+    """Lines of the responsibilities sections; only their bullets when they have any.
+    Pitch and lead-ins ending in a colon ("You will work closely with:") are left out."""
     own = [s.line for s in lines if s.section == RESPONSIBILITIES]
     if any(line.is_bullet for line in own):
         own = [line for line in own if line.is_bullet]
+    own = [line for line in own if not (is_pitch(line.text) or line.text.endswith(":"))]
     return [_cut(line.text) for line in own][:MAX_RESPONSIBILITIES]
 
 
