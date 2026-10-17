@@ -190,18 +190,24 @@ def test_non_digital_esco_aliases_load_as_weak(tmp_path) -> None:
     (tmp_path / "aliases.csv").write_text(
         "canonical_id,alias,alias_norm,lang,alias_kind,exact_only\n"
         "e:1,Python,python,en,preferred,false\n"
-        "e:2,innovation,innovation,en,preferred,false\n"
+        "e:2,negotiation,negotiation,en,preferred,false\n"
         "e:3,teamwork,teamwork,en,custom,false\n", encoding="utf-8")
     (tmp_path / "concepts.csv").write_text(
         "canonical_id,name_en,name_uk,description,skill_type,reuse_level,is_digital,source\n"
-        "e:1,Python,,,,,true,esco\ne:2,innovation,,,,,false,esco\n"
+        "e:1,Python,,,,,true,esco\ne:2,negotiation,,,,,false,esco\n"
         "e:3,teamwork,,,,,false,esco\n", encoding="utf-8")
     vocab = SkillVocabulary.load(tmp_path)
-    assert vocab.weak == {"innovation"}  # a custom alias is trusted like a digital skill
-    assert [(h.text, h.strong) for h in vocab.scan("Python, innovation and teamwork")] == [
-        ("Python", True), ("innovation", False), ("teamwork", True)]
+    assert vocab.weak == {"negotiation"}  # a custom alias is trusted like a digital skill
+    assert [(h.text, h.strong) for h in vocab.scan("Python, negotiation and teamwork")] == [
+        ("Python", True), ("negotiation", False), ("teamwork", True)]
 
 
 def test_huge_plus_is_a_preference_but_five_plus_years_is_not() -> None:
     assert rules.has_preferred_cue("Tableau is a huge plus")
     assert not rules.has_preferred_cue("5 plus years of SQL")
+
+
+def test_sentences_do_not_split_after_abbreviations() -> None:
+    assert rules.sentences("Agile tools (e.g. Jira, Confluence) etc. Then more.") == [
+        "Agile tools (e.g. Jira, Confluence) etc. Then more."]
+    assert rules.sentences("Python. Docker is a plus.") == ["Python.", "Docker is a plus."]
