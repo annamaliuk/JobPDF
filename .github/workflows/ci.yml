@@ -1,0 +1,151 @@
+# Continuous integration (JM-37): what has to be green before a pull request is merged.
+#
+#   test    ruff + pytest on the Python versions we support, with a real Postgres + pgvector
+#   dags    the Airflow DAG tests, which need Airflow installed (they skip without it)
+#   docker  the compose file is valid and both images build, start and import the package
+#
+# No job needs a secret: tests use fakes and replays, never the network or an API key, so
+# pull requests from forks run the same checks safely.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ruff + pytest (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]  # pyproject says >=3.10; the Docker image uses 3.12
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: jobpdf
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: jobpdf
+        ports:
+          - 5432:5432
+        # shm-size: HNSW index builds fail with Docker's default 64 MB (see docker-compose.yml)
+        options: >-
+          --shm-size=1g
+          --health-cmd "pg_isready -U jobpdf -d jobpdf"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://jobpdf:ci@localhost:5432/jobpdf
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.x"
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # --locked fails when uv.lock does not match pyproject.toml: run `uv lock` and commit it.
+      - name: Install
+        run: uv sync --locked
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      # The db tests skip quietly without a database, so they run on their own and the
+      # report is checked: a broken service must not look like a pass.
+      - name: Database tests
+        run: uv run pytest -m db -q -rs --junitxml=junit-db.xml
+
+      - name: Database tests really ran
+        run: uv run python scripts/check_db_tests_ran.py junit-db.xml
+
+      - name: Everything else
+        run: uv run pytest -m "not db" -q -rs
+
+  dags:
+    name: Airflow DAG tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # The version matches the Dockerfile's Airflow image. Airflow goes in with its own
+      # constraints; the packages the DAGs import (not torch) go in afterwards.
+      - name: Install Airflow and the DAGs' dependencies
+        run: |
+          pip install "apache-airflow==2.10.5" \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.12.txt"
+          pip install pytest "pydantic>=2" "psycopg[binary]" numpy pgvector rapidfuzz anthropic \
+            huggingface_hub python-docx pymupdf
+
+      - name: DAG tests
+        run: python -m pytest tests/ingestion/test_dag.py -q -rs -p no:cacheprovider
+
+  docker:
+    name: Docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compose file is valid (every profile)
+        run: |
+          docker compose --env-file .env.example config -q
+          docker compose --env-file .env.example --profile tools --profile airflow config -q
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: app
+          tags: jobpdf-app:ci
+          load: true
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,scope=app,mode=max
+
+      # Offline, as in production: this fails if the embedding model is not in the image.
+      - name: The app image starts and loads its model offline
+        run: |
+          docker run --rm --user 1000:0 jobpdf-app:ci python -c \
+            "import jobpdf.api.app; from jobpdf.normalization.embedder import Embedder; \
+          print(Embedder().embed(['ci']).shape)"
+
+      - name: Build the Airflow image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: airflow
+          tags: jobpdf-airflow:ci
+          load: true
+          cache-from: type=gha,scope=airflow
+          cache-to: type=gha,scope=airflow,mode=max
+
+      - name: The Airflow image sees the package and all three DAGs
+        run: |
+          docker run --rm --user 1000:0 -e HOME=/tmp jobpdf-airflow:ci python -c \
+            "from airflow.models import DagBag; bag = DagBag('/app/dags', include_examples=False); \
+          assert not bag.import_errors, bag.import_errors; \
+          assert set(bag.dags) == {'remotive_fetch', 'job_sources_fetch', 'vacancy_ingest'}, bag.dags; \
+          print(sorted(bag.dags))"
