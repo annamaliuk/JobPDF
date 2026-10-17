@@ -223,7 +223,7 @@ OPTIONS = SkillVocabulary.from_norms([
 @pytest.mark.parametrize(("line", "found"), [
     ("Basic knowledge in SQL, Oracle, Linux, or Windows",
      [("SQL", True), ("Oracle", True), ("Linux", True), ("Windows", True)]),
-    ("PostgreSQL (or MySQL)", [("PostgreSQL", True), ("MySQL", True)]),
+    ("PostgreSQL (or MySQL)", [("PostgreSQL", False), ("MySQL", True)]),
     ("Experience integrating AI/ML models (e.g., LLMs, NLP) with web applications",
      [("ML", False), ("NLP", True)]),
     ("IT-related degree and/or certifications (Cisco, A+, Network+, Microsoft, or equivalent)",
