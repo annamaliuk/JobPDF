@@ -27,6 +27,7 @@ One Python package, `jobpdf`, runs as two processes that share one Postgres data
 5. [Operating it](#5-operating-it)
 6. [Settings](#6-settings)
 7. [Continuous integration](#7-continuous-integration)
+8. [Monitoring and alerts](#8-monitoring-and-alerts)
 
 ---
 
@@ -38,6 +39,7 @@ You need Python 3.10+, [uv](https://docs.astral.sh/uv/) and Docker (for Postgres
 cp .env.example .env            # then fill it in, see "Settings"
 uv sync                         # installs the app and the dev tools
 docker compose up -d db         # Postgres 16 with pgvector on 127.0.0.1:5432
+uv run python scripts/migrate.py   # creates the tables (what it does: sql/README.md)
 ```
 
 The skill index needs the ESCO taxonomy once. Download the ESCO skills export (CSV, English and
@@ -90,10 +92,12 @@ Docker Compose v2 is required.
 docker compose build
 ```
 
-**3. Start the database and build the skill index** (once; repeat only when the taxonomy changes):
+**3. Start the database, create the tables and build the skill index** (once; repeat only when the
+taxonomy changes):
 
 ```bash
 docker compose up -d db
+docker compose run --rm migrate                    # creates the tables, see sql/README.md
 cp /path/to/esco.zip data/esco.zip
 docker compose run --rm tools python scripts/build_taxonomy.py --zip data/esco.zip
 docker compose run --rm tools python scripts/build_index.py
@@ -156,6 +160,7 @@ Without Airflow, the same three scripts from the host's crontab do the job:
 | `proxy` (Caddy) | 80, 443 | the only public entry; HTTPS certificate is automatic; 6 MB body cap |
 | `app` | 8000 (internal) | read-only file system, no Linux capabilities, uploads in memory (`tmpfs`) |
 | `db` | 127.0.0.1:5432 | never exposed to the network |
+| `migrate` | none | runs once on every `up`, applies new `sql/*.sql` files and exits; `app` and `airflow-init` wait for it |
 | `airflow-*` | 127.0.0.1:8080 | only with `--profile airflow` |
 | `tools` | none | `docker compose run --rm tools python scripts/<name>.py` |
 
@@ -186,8 +191,12 @@ after the first real CV.
 
 ```bash
 git pull
-docker compose up -d --build            # rebuilds changed images, restarts changed services
+docker compose up -d --build            # rebuilds changed images, applies new migrations, restarts
 ```
+
+Schema changes are migrations in `sql/` and are applied by the `migrate` service on that `up`
+(`docker compose logs migrate` shows what it did). If one fails, `up` reports it and the new app
+starts only after you fix it and run `up` again. See [sql/README.md](sql/README.md).
 
 If the taxonomy or the embedding model changed, rebuild the index
 (`docker compose run --rm tools python scripts/build_index.py`); the health report shows the
@@ -258,6 +267,8 @@ Other endpoints:
 
 | Symptom | Look at | Likely cause and fix |
 |---|---|---|
+| `docker compose up` stops with `migrate exited with code 1` | `docker compose logs migrate` | a migration failed or an applied file was edited; the message gives a code and a version, the table in `sql/README.md` says what to do |
+| no alerts arrive although something is wrong | `docker compose logs monitor` | the monitor is not running (`--profile monitor`), `ALERT_WEBHOOK_URL` is empty (it then only prints), or the log says `webhook failed` |
 | `app` never becomes healthy | `docker compose logs app` | `JOBPDF_RATE_LIMIT_SECRET` missing (the app refuses to start without it), or `db` not ready |
 | `/health` → `database` `unreachable` | `docker compose ps db` | database is down or `POSTGRES_PASSWORD` differs from the volume's |
 | `normalization` `index_unavailable` | | skill index not built: run `build_taxonomy.py` and `build_index.py` |
@@ -290,6 +301,7 @@ All in `.env` (template: `.env.example`). Keys are never printed or logged.
 | `APP_UID` | compose | the user the containers run as |
 | `DOMAIN` | proxy | public host name for the HTTPS certificate |
 | `AIRFLOW_ADMIN_PASSWORD`, `AIRFLOW_SECRET_KEY` | airflow | the UI login and its session secret |
+| `JOBPDF_MONITOR_API_KEY`, `ALERT_WEBHOOK_URL`, `ALERT_LABEL`, `MONITOR_IGNORE` | monitor | a key for `/metrics`, where alerts are posted, the name in messages, alert codes to ignore (section 8) |
 
 ---
 
@@ -322,3 +334,67 @@ database service did not come up; the log of the "Database tests" step lists the
 require these status checks before merging: `ruff + pytest (Python 3.10)`,
 `ruff + pytest (Python 3.12)`, `Airflow DAG tests` and `Docker images`. The Docker job takes
 several minutes on a cold cache (it downloads the embedding model); later runs reuse the cache.
+
+---
+
+## 8. Monitoring and alerts
+
+`/health` and `/metrics` (section 5) tell you what is wrong when you look. The **monitor** looks
+for you: every minute it asks the service, applies fixed rules, and posts to a chat webhook when
+something starts, is still wrong after 6 hours, or is fixed. It is `scripts/uptime_check.py`, plain
+Python with no extra service or account.
+
+**Set it up** (about five minutes):
+
+1. Make a key that may read `/metrics` and give the server its hash, like any caller (section 2, step 4):
+   `docker compose run --rm tools python scripts/make_api_key.py monitor`. Put the **key** in `.env` as
+   `JOBPDF_MONITOR_API_KEY` and the `monitor:<sha256>` line into `JOBPDF_API_KEYS`. Without the key only
+   `/health` is checked.
+2. Create an incoming webhook in Slack, Mattermost or Discord and put its https address in
+   `ALERT_WEBHOOK_URL` (it contains a token: `.env` only). Without it the monitor only prints.
+3. `docker compose up -d app` (to load the new key hash), then `docker compose --profile monitor up -d monitor`.
+   `docker compose logs monitor` shows `monitor: metrics key set, webhook set` and, later, every change.
+
+Try it: `docker compose stop app`; after about two minutes `CRITICAL unreachable` arrives. `docker
+compose start app` brings `RESOLVED unreachable` about two minutes after it answers again.
+
+**What is checked.** Codes are stable; a message is a fixed sentence with the code, never data from a CV.
+
+| Alert | Severity | Means | What to do |
+|---|---|---|---|
+| `unreachable` | critical | `/health` does not answer (or the proxy says 502/503/504 without a report) | `docker compose ps`, `docker compose logs app` |
+| `bad_response` | critical | an answer that is not a health report: wrong address, or something else on that port | check `MONITOR_URL` / `--url` |
+| `check.<name>.<code>` | critical if the check is `down`, else warning | one per health check that is not ok, e.g. `check.database.database_down`, `check.vacancies.stale_vacancies`, `check.fetch.stale_fetch`, `check.llm.key_missing` | the table in section 5 |
+| `health_down` | critical | the report says `down` but no single check does | `curl /health`, the logs |
+| `service_errors` | warning at 20%, critical at 50% | that share of analyses failed **on our side**: LLM errors, invalid extractions, unexpected exceptions | `/metrics` `errors`, the LLM key and quota, `docker compose logs app` |
+| `slow_analyses` | warning | the 95th percentile of a whole analysis is over 60 seconds | `/metrics` `stages` shows which stage |
+| `token_spike` | warning | successful analyses average over 40 000 LLM tokens | `/metrics` `tokens`; a changed prompt or a stuck loop costs money |
+| `limiter_failing` | warning | the rate limiter cannot reach its database; uploads are refused | the database |
+| `metrics_unavailable` | warning | the key is rejected or `/metrics` fails | `JOBPDF_MONITOR_API_KEY` and the hash in `JOBPDF_API_KEYS` |
+
+A CV that cannot be read (corrupt, encrypted, no text, too large) is the caller's problem and never
+counts as an error here. The rates need at least 10 analyses and cover the time since the app last
+restarted (metrics live in memory).
+
+**Noise control.** An alert starts only after it was seen twice in a row (two minutes), so one slow
+answer wakes nobody; it is repeated every 6 hours while it lasts; it is resolved after two clean
+checks. A message that cannot be posted is retried every minute. The state is kept in
+`data/monitor_state.json`. The numbers are constants at the top of `jobpdf/monitoring/alerts.py` and
+`jobpdf/monitoring/uptime.py`.
+
+**Ignore what does not apply.** A site without Airflow reports `check.fetch.no_cache` forever. Put
+`MONITOR_IGNORE=check.fetch.no_cache` in `.env` (comma-separated) and `docker compose up -d monitor`.
+
+**Without Docker, or from another machine.** The script is stand-alone:
+
+```bash
+uv run python scripts/uptime_check.py --url https://jobs.example.com      # once; exit 0 ok, 1 warning, 2 critical
+# cron, every minute, with memory between runs (confirmation and the webhook need --state):
+* * * * * cd /srv/jobpdf && ALERT_WEBHOOK_URL=... uv run python scripts/uptime_check.py --state data/monitor_state.json >/dev/null
+```
+
+**What the monitor cannot see.** It runs on the same machine as the app. If the machine, the Docker
+daemon or the proxy (Caddy, the certificate) goes down, the monitor goes with it or looks at the wrong
+layer. Add one outside check on `https://<DOMAIN>/health` (a free uptime service, or this script from
+another machine with `--url`): `/health` is public, answers 200 for ok and degraded and 503 for down.
+Nothing watches the monitor itself; `docker compose ps` shows whether it is running.
