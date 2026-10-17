@@ -30,7 +30,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH \
     PYTHONPATH=/app \
-    HF_HOME=/opt/hf
+    HF_HOME=/opt/hf \
+    HOME=/tmp
 
 # PyMuPDF and torch need the OpenMP runtime; nothing else is installed from apt.
 RUN apt-get update \
