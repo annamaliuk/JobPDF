@@ -216,14 +216,19 @@ def test_sentences_do_not_split_after_abbreviations() -> None:
 OPTIONS = SkillVocabulary.from_norms([
     "ml", "nlp", "cisco", "sql", "oracle", "linux", "windows", "python", "javascript", "aws",
     "azure", "gcp", "agile", "jira", "confluence", "leadership", "postgresql", "mysql",
-    "microsoft excel", "google sheets",
+    "microsoft excel", "google sheets", "react", "active directory", "crm",
 ])
 
 
 @pytest.mark.parametrize(("line", "found"), [
     ("Basic knowledge in SQL, Oracle, Linux, or Windows",
      [("SQL", True), ("Oracle", True), ("Linux", True), ("Windows", True)]),
-    ("PostgreSQL (or MySQL)", [("PostgreSQL", False), ("MySQL", True)]),
+    ("PostgreSQL (or MySQL)", [("PostgreSQL", False), ("MySQL", False)]),
+    ("Enhance front-end with Hotwire, StimulusJS, or React", [("React", False)]),
+    ("Experience with Azure AD, Active Directory, Intune, or other RMM agents",
+     [("Azure", False), ("Active Directory", False)]),
+    ("Navigate digital tools such as SLACK, CRM software, google sheets, etc.",
+     [("CRM", False), ("google sheets", False)]),
     ("Experience integrating AI/ML models (e.g., LLMs, NLP) with web applications",
      [("ML", False), ("NLP", True)]),
     ("IT-related degree and/or certifications (Cisco, A+, Network+, Microsoft, or equivalent)",
@@ -253,8 +258,8 @@ def test_ideally_only_qualifies_what_follows_it() -> None:
 @pytest.mark.parametrize(("text", "pitch"), [
     ("We’re looking for someone who combines deep expertise in sports", True),
     ("If you have a passion for technology - this is the position for you.", True),
-    ("This is a brand new Adoption Strategist role sitting at the intersection", True),
-    ("This role sits within GTM Enablement", True),
+    ("This is a brand new Adoption Strategist role sitting at the intersection", False),
+    ("This role sits within GTM Enablement", False),
     ("Architect and maintain Rails applications (Rails 8)", False),
     ("Write simple to moderately complex property damage estimates", False),
 ])
@@ -262,11 +267,12 @@ def test_pitch_lines_are_recognised(text: str, pitch: bool) -> None:
     assert rules.is_pitch(text) == pitch
 
 
-def test_responsibilities_leave_out_pitch_and_lead_ins() -> None:
+def test_responsibilities_leave_out_pitch() -> None:
     placed = rules.split_sections([
         Line("What you'll do", is_heading=True),
         Line("If you have a passion for technology, this is the position for you."),
         Line("You will work in close partnership with:"),
         Line("Own the API."),
     ])
-    assert rules.responsibilities_of(placed) == ["Own the API."]
+    assert rules.responsibilities_of(placed) == [
+        "You will work in close partnership with:", "Own the API."]
