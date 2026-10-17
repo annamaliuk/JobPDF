@@ -136,7 +136,7 @@ class MemoryStore:
             "versions": Versions(
                 features.embedding_version, features.vacancy_text_version,
                 features.taxonomy_version, features.index_version,
-                features.matcher_prompt_version),
+                features.matcher_prompt_version, features.extraction_version),
         }
         return UpsertResult(inserted=row is None, updated=row is not None)
 
