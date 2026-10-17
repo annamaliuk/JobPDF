@@ -21,16 +21,18 @@ from pydantic import BaseModel, ConfigDict
 from jobpdf.ingestion import requirement_rules as rules
 from jobpdf.ingestion.posting_text import is_usable, posting_lines
 from jobpdf.ingestion.sources.models import SourcePosting
+from jobpdf.normalization.text import normalize
 from jobpdf.ranking.models import EducationRequirement
 
 TAGS_VERSION = "tags"
-RULES_VERSION = "rules-2"  # bump when a rule or word list changes
+RULES_VERSION = "rules-3"  # bump when a rule or word list changes
 
 # Warning codes.
 TAGS_FALLBACK = "tags_fallback"
 NO_REQUIREMENTS = "no_requirements"
 TAGS_ADDED = "tags_added"  # the description named few skills, so the tags were added
 PARTIAL_VOCABULARY = "partial_vocabulary"  # no taxonomy build: custom skills only
+TAG_QUOTE = "(source tag)"
 FEW_SKILLS = 3  # fewer skills than this found in the text: the tags are added
 MAX_SKILLS = 25
 _REQUIRING = {rules.REQUIREMENTS, rules.NICE_TO_HAVE}
@@ -108,6 +110,11 @@ class RulesExtractor:
             self._vocabulary = rules.SkillVocabulary.load(self._taxonomy_dir)
         return self._vocabulary
 
+    def _is_skill_tag(self, tag: str) -> bool:
+        """Only tags the taxonomy knows ("CRM"), never job descriptors ("Remote")."""
+        norm = normalize(tag)
+        return norm in self.vocabulary.norms and norm not in rules.TAG_STOP
+
     def extract(self, posting: SourcePosting) -> Requirements:
         lines = posting_lines(posting.description)
         if not is_usable(lines):
@@ -127,7 +134,8 @@ class RulesExtractor:
             nice = item.section == rules.NICE_TO_HAVE
             trust_weak = item.section in _REQUIRING or not structured
             for hit in vocabulary.scan(item.line.text, preferred=nice):
-                if rules.is_language_name(hit.text) or not (hit.strong or trust_weak):
+                trusted = hit.strong or trust_weak or rules.has_requirement_cue(hit.quote)
+                if rules.is_language_name(hit.text) or not trusted:
                     continue
                 target = preferred if hit.preferred else required
                 if hit.norm not in required and hit.norm not in target:
@@ -136,6 +144,10 @@ class RulesExtractor:
             if nice or item.section == rules.RESPONSIBILITIES:
                 continue
             for sentence in rules.sentences(item.line.text):
+                for language in rules.languages_in(sentence):
+                    if language not in languages:
+                        languages.append(language)
+                        quotes.setdefault(f"language:{language}", sentence)
                 if rules.has_preferred_cue(sentence) or rules.is_boilerplate(sentence):
                     continue
                 found = rules.years_in(sentence)
@@ -145,10 +157,6 @@ class RulesExtractor:
                 if education is None and (hit := rules.education_in(sentence)):
                     education = EducationRequirement(level=hit.level, field=hit.field,
                                                      quote=hit.quote)
-                for language in rules.languages_in(sentence):
-                    if language not in languages:
-                        languages.append(language)
-                        quotes.setdefault(f"language:{language}", sentence)
         for norm in list(preferred):
             if norm in required:
                 del preferred[norm]
@@ -158,7 +166,9 @@ class RulesExtractor:
         if len(skills) + len(preferred) < FEW_SKILLS:
             known = {s.casefold() for s in [*skills, *preferred.values()]}
             extra = [t for t in self._tags.extract(posting).required_skills
-                     if t.casefold() not in known]
+                     if t.casefold() not in known and self._is_skill_tag(t)]
+            for tag in extra:
+                quotes.setdefault(tag, TAG_QUOTE)
             if extra:
                 skills = (skills + extra)[:MAX_SKILLS]
                 warnings.append(TAGS_ADDED)
