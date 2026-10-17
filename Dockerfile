@@ -85,5 +85,7 @@ COPY --from=deps /opt/requirements.txt /opt/requirements.txt
 RUN chmod -R a+rX /app /opt/hf /opt/requirements.txt
 USER airflow
 
-# The project's locked dependencies go into Airflow's own environment.
-RUN pip install --no-cache-dir -r /opt/requirements.txt
+# The project's locked dependencies go into Airflow's own environment. The lock pins the CPU
+# build of torch (2.x+cpu), which only the PyTorch index has.
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+    -r /opt/requirements.txt
