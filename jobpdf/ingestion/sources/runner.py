@@ -314,6 +314,16 @@ def _result(adapter: SourceAdapter, found: tuple[datetime, _Run, _Parsed],
     )
 
 
+def read_cache(adapter: SourceAdapter, *, base: Path | None = None) -> SourceResult | None:
+    """The newest usable cached run of a source, of any age, or None. Never makes a request
+    and needs no API key: ingestion reads what the fetch jobs already stored."""
+    cached = _load_cache(adapter, cache_dir(adapter.name, base))
+    if cached is None:
+        return None
+    return _result(adapter, cached, from_cache=True, stale=False,
+                   warnings=_cached_warnings(cached))
+
+
 def run_source(adapter: SourceAdapter, **kwargs: Any) -> dict[str, Any]:
     """What a scheduled task runs for one source: a small summary, never the postings.
     A source that is not configured is reported as skipped rather than failing the task."""

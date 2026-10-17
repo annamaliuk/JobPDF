@@ -192,7 +192,7 @@ def test_the_muse_posting_fields_are_mapped() -> None:
     assert made.url == "https://www.themuse.com/jobs/acme/1" and made.title == "Data Engineer 1"
     assert made.company == "Acme" and made.location_raw == "Flexible / Remote"
     assert made.remote is True and made.category == "Data and Analytics"
-    assert made.tags == ["Mid Level", "Remote OK"] and made.employment_type == "external"
+    assert made.tags == ["Remote OK"] and made.employment_type == "external"
     assert made.posted_at == datetime(2026, 9, 20, 10, tzinfo=timezone.utc)
     assert made.description == "<p>Build pipelines 1</p>" and not made.description_is_excerpt
     assert (parsed.skipped, parsed.filtered, parsed.raw_count) == (0, 0, 1)
@@ -549,7 +549,7 @@ def test_the_module_constants_name_their_sources() -> None:
 
 def test_the_muse_treats_flexible_alone_as_remote_and_ignores_blank_names() -> None:
     job = muse_job(1, locations=[{"name": "Flexible"}, {"name": "  "}, {"name": 5}, {}],
-                   categories=[{"name": "  "}, {"name": "Design"}], levels="x")
+                   categories=[{"name": "  "}, {"name": "Design"}], tags="x")
 
     (made,) = TheMuse().parse_page(muse_page([job])).postings
 
@@ -591,3 +591,11 @@ def test_an_empty_remotive_salary_becomes_none() -> None:
 
 def test_an_empty_adzuna_country_setting_means_the_default() -> None:
     assert Adzuna.from_environment({"ADZUNA_COUNTRY": " "}).country == "gb"
+
+
+def test_the_muse_seniority_levels_are_not_turned_into_skills() -> None:
+    job = muse_job(1, levels=[{"name": "Senior Level"}], tags=[{"name": "Python"}])
+
+    (made,) = TheMuse().parse_page(muse_page([job])).postings
+
+    assert made.tags == ["Python"]
