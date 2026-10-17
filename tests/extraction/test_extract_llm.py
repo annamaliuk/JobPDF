@@ -5,8 +5,8 @@ import pytest
 
 from jobpdf.extraction import llm, prompt
 from jobpdf.extraction.llm import (
-    AnthropicToolCaller,
     FakeToolCaller,
+    GeminiToolCaller,
     MissingAPIKeyError,
     RecordingToolCaller,
     ReplayMissError,
@@ -37,20 +37,20 @@ def test_fake_returns_and_raises_in_order_and_records_calls() -> None:
 
 def test_missing_key_raises_at_construction_with_guidance() -> None:
     with pytest.raises(MissingAPIKeyError) as exc:
-        AnthropicToolCaller()
-    assert "JM-35" in str(exc.value) and ".env" in str(exc.value)
+        GeminiToolCaller()
+    assert "GEMINI_API_KEY" in str(exc.value) and ".env" in str(exc.value)
 
 
 def test_model_comes_from_argument_env_or_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
-    assert AnthropicToolCaller(api_key="test-not-a-real-key").model == llm.DEFAULT_MODEL
-    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-env-model")
-    assert AnthropicToolCaller(api_key="test-not-a-real-key").model == "claude-env-model"
-    assert AnthropicToolCaller("claude-arg", api_key="test-not-a-real-key").model == "claude-arg"
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    assert GeminiToolCaller(api_key="test-not-a-real-key").model == llm.DEFAULT_GEMINI_MODEL
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-env-model")
+    assert GeminiToolCaller(api_key="test-not-a-real-key").model == "gemini-env-model"
+    assert GeminiToolCaller("gemini-arg", api_key="test-not-a-real-key").model == "gemini-arg"
 
 
 def test_live_calls_are_blocked_in_tests() -> None:
-    caller = AnthropicToolCaller(api_key="test-not-a-real-key")
+    caller = GeminiToolCaller(api_key="test-not-a-real-key")
 
     with pytest.raises(AssertionError, match="never run in tests"):
         caller.call(system="s", user="u", tool=TOOL, max_tokens=10)

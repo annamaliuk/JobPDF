@@ -1,7 +1,7 @@
 """Print the health report once and exit non-zero when the service is down (JM-34).
 
-Usable by hand and as a container health check. Reads DATABASE_URL and ANTHROPIC_API_KEY
-from the environment (as the app does). Statuses, codes and counts only: no secrets.
+Usable by hand and as a container health check. Reads DATABASE_URL, LLM_PROVIDER and
+GEMINI_API_KEY from the environment (as the app does). Statuses, codes and counts only: no secrets.
 
 Usage (from the repo root):
     uv run python scripts/health_check.py            # database, vacancies, llm key, fetch

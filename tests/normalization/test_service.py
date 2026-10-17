@@ -225,7 +225,7 @@ def test_concept_ids_drop_unmatched_and_duplicates_but_lists_keep_them() -> None
 
 
 def test_versions_and_status_reflect_the_dependencies() -> None:
-    svc, _ = service(llm_model="claude-sonnet-4-6", cache_type="InMemorySkillMatchCache")
+    svc, _ = service(llm_model="gemini-2.5-flash", cache_type="InMemorySkillMatchCache")
 
     assert svc.versions == versions()
     assert svc.status() == {
@@ -234,13 +234,13 @@ def test_versions_and_status_reflect_the_dependencies() -> None:
         "index_version": index_version(META),
         "matcher_prompt_version": MATCHER_PROMPT_VERSION,
         "llm": "enabled",
-        "llm_model": "claude-sonnet-4-6",
+        "llm_model": "gemini-2.5-flash",
         "cache": "InMemorySkillMatchCache",
     }
 
 
 def test_status_without_llm_and_never_with_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-dummy-SECRET-value")
+    monkeypatch.setenv("GEMINI_API_KEY", "sk-dummy-SECRET-value")
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:SECRETPW@localhost/db")
     svc, _ = service()
 
@@ -317,7 +317,7 @@ def env(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(service_module, "database_url", lambda: FAKE_URL)
     monkeypatch.setattr(service_module, "SkillIndex", FakeSkillIndex)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     service_module.reset_normalization_service()
     yield built
     service_module.reset_normalization_service()
@@ -335,7 +335,7 @@ def test_build_without_api_key_disables_the_llm_with_one_warning(
     assert status["index_version"] == index_version(META)
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
-    assert "ANTHROPIC_API_KEY missing" in warnings[0]
+    assert "GEMINI_API_KEY missing" in warnings[0]
     assert "SECRETPW" not in caplog.text
     assert svc.normalize_skills(["GBQ"])[0].concept_id == BIGQUERY
 
@@ -349,15 +349,11 @@ def test_build_warms_up_the_model_unless_told_not_to(env) -> None:
 
 
 def test_build_with_api_key_enables_the_llm(env, monkeypatch: pytest.MonkeyPatch) -> None:
-    class FakeAnthropic:
-        model = "claude-sonnet-4-6"
-
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-dummy-SECRET-value")
-    monkeypatch.setattr(service_module, "AnthropicToolCaller", FakeAnthropic)
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-SECRET-value")  # building the caller sends nothing
 
     status = build_normalization_service().status()
 
-    assert (status["llm"], status["llm_model"]) == ("enabled", "claude-sonnet-4-6")
+    assert (status["llm"], status["llm_model"]) == ("enabled", "gemini-2.5-flash")
     assert "SECRET" not in str(status)
 
 

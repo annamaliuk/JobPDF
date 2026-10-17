@@ -481,7 +481,7 @@ def test_a_slot_is_released_after_a_failed_analysis(services) -> None:
 
 def health_for(tmp_path: Path, conn) -> partial:
     write_cache(tmp_path, "remotive", 3600)
-    return partial(build_health, connect=lambda: conn, environ={"ANTHROPIC_API_KEY": "x"},
+    return partial(build_health, connect=lambda: conn, environ={"GEMINI_API_KEY": "x"},
                    cache_base=tmp_path, clock=lambda: NOW.timestamp())
 
 

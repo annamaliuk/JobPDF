@@ -151,7 +151,7 @@ def test_live_without_key_is_one_clean_line(tmp_path: Path, capsys) -> None:
 
     assert code == 2 and report is None
     err = capsys.readouterr().err
-    assert err.count("\n") == 1 and "ANTHROPIC_API_KEY" in err
+    assert err.count("\n") == 1 and "GEMINI_API_KEY" in err
     assert "Traceback" not in err
     assert not (tmp_path / "recordings").exists()
 

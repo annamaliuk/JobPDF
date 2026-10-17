@@ -61,7 +61,7 @@ def extract_profile(
 ) -> ExtractionResult:
     """Extract a validated CandidateProfile from a parsed, sectioned CV.
 
-    ``caller=None`` means the real API of LLM_PROVIDER (Anthropic by default), which
+    ``caller=None`` means the real API of LLM_PROVIDER (Gemini by default), which
     raises MissingAPIKeyError without its key. Tests pass a FakeToolCaller or ReplayToolCaller.
     """
     caller = caller if caller is not None else default_caller()
