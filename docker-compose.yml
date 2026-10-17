@@ -1,8 +1,10 @@
 # JobPDF on one machine (JM-17 database, JM-36 app, proxy and Airflow).
 #
-#   docker compose up -d --build                  db + app + proxy
+#   docker compose up -d --build                  db, migrations, then app + proxy
 #   docker compose --profile airflow up -d        also the Airflow scheduler and web UI
 #   docker compose run --rm tools python scripts/<script>.py     one-off scripts
+#   docker compose --profile monitor up -d monitor   alerts (README, section 8)
+#   docker compose run --rm migrate python scripts/migrate.py --status   what is applied
 #
 # The README has the full first-time setup. Everything reads its settings from .env; the
 # containers get only the variables they need, and DATABASE_URL here points at the "db"
@@ -58,6 +60,26 @@ services:
       timeout: 5s
       retries: 10
 
+  # JM-38: applies sql/*.sql (the ones not applied yet) and exits. The app and Airflow wait for
+  # it, so a failed migration stops them from starting against a schema that is not ready.
+  # It needs only the database address: no API keys. Look at the result with
+  #   docker compose logs migrate
+  migrate:
+    build: *app-build
+    image: jobpdf-app
+    restart: "no"
+    user: *user
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *database-url
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: []
+    command: ["python", "scripts/migrate.py"]
+
   app:
     build: *app-build
     image: jobpdf-app
@@ -66,6 +88,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       <<: *jobpdf-env
       JOBPDF_API_KEYS: ${JOBPDF_API_KEYS:-}
@@ -103,6 +127,33 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
+  # JM-40: checks /health and /metrics every minute and posts to a webhook (profile "monitor").
+  #   docker compose --profile monitor up -d monitor
+  # It starts after the app but does not wait for it to be healthy: it is there for when the
+  # app is not. It cannot see the proxy or the machine going down; see the README, section 8.
+  monitor:
+    profiles: [monitor]
+    build: *app-build
+    image: jobpdf-app
+    restart: unless-stopped
+    user: *user
+    depends_on: [app]
+    environment:
+      MONITOR_URL: http://app:8000
+      JOBPDF_MONITOR_API_KEY: ${JOBPDF_MONITOR_API_KEY:-}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_LABEL: ${ALERT_LABEL:-JobPDF}
+      MONITOR_IGNORE: ${MONITOR_IGNORE:-}
+    volumes:
+      - ./data:/app/data
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: []
+    command: ["python", "scripts/uptime_check.py", "--loop",
+              "--state", "data/monitor_state.json"]
+
   # One-off scripts: docker compose run --rm tools python scripts/build_index.py
   tools:
     profiles: [tools]
@@ -130,6 +181,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment: &airflow-env
       <<: [*jobpdf-env, *ingestion-env]
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
