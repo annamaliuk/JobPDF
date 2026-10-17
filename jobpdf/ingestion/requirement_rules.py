@@ -127,14 +127,16 @@ _EXAMPLES = re.compile(
     re.IGNORECASE,
 )
 _EXAMPLES_END = re.compile(r"[);]")
-# "SQL, Oracle, Linux, or Windows", "PostgreSQL (or MySQL)": one of the items is enough.
+# "SQL, Oracle, Linux, or Windows": one of the items is enough.
 _WORD = r"(?!(?:and|und|та|і)\b)[\w+#./\-'’]+"
 _ITEM = rf"{_WORD}(?: {_WORD}){{0,2}}"  # up to three words
 _OR_LIST = re.compile(
-    rf"(?:{_ITEM}\s*,\s*)*{_ITEM}\s*,?\s*\(?\s*\b(?:or|oder|або|чи)\b\s+{_ITEM}"
+    rf"(?:{_ITEM}\s*,\s*)*{_ITEM}\s*,?\s*\b(?:or|oder|або|чи)\b\s+{_ITEM}"
     r"(?=\s*(?:[,;:().]|$|\b(?:is|are|would|and)\b))",
     re.IGNORECASE,
 )
+# "PostgreSQL (or MySQL)": the first is asked for, the bracket names a stand-in.
+_BRACKET_OR = re.compile(r"\(\s*(?:or|oder|або|чи)\b[^)]*\)", re.IGNORECASE)
 _CLAUSE = re.compile(r"\s*[,;]\s*|\s+but\s+")
 
 # Real skills that are also everyday words: they need a capital and another skill nearby.
@@ -233,6 +235,7 @@ def preference_start(sentence: str) -> int | None:
 def option_spans(sentence: str) -> list[tuple[int, int]]:
     """Character spans of a sentence that list examples or alternatives."""
     spans = [m.span() for m in _OR_LIST.finditer(sentence)]
+    spans += [m.span() for m in _BRACKET_OR.finditer(sentence)]
     for m in _EXAMPLES.finditer(sentence):
         end = _EXAMPLES_END.search(sentence, m.end())
         spans.append((m.end(), end.start() if end else len(sentence)))

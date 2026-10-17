@@ -25,7 +25,7 @@ from jobpdf.normalization.text import normalize
 from jobpdf.ranking.models import EducationRequirement
 
 TAGS_VERSION = "tags"
-RULES_VERSION = "rules-4"  # bump when a rule or word list changes
+RULES_VERSION = "rules-5"  # bump when a rule or word list changes
 
 # Warning codes.
 TAGS_FALLBACK = "tags_fallback"
