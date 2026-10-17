@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}JobPDF: see which remote jobs fit your CV{% endblock %}
+{% block main %}
+<section class="intro">
+  <h1>See which remote jobs fit your CV</h1>
+  <p class="lead">Upload your CV. You get current remote jobs ranked by how well your skills and
+    experience fit, with the skills you have and the ones you are missing for each.</p>
+
+  <form id="upload" method="post" action="{{ path }}" enctype="multipart/form-data"
+        data-max-bytes="{{ max_bytes }}">
+    <label for="cv">Your CV (PDF or DOCX, up to {{ max_bytes // 1048576 }} MB)</label>
+    <input id="cv" name="{{ field }}" type="file" required
+           accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+    <button type="submit">Check my CV</button>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+  </form>
+</section>
+
+<section class="example" aria-labelledby="example-heading">
+  <h2 id="example-heading">What the report shows</h2>
+  <p>Each job gets a row. The meter has one segment for every skill the job requires. A filled
+    segment is a skill you have; an outlined one is a skill you are missing.</p>
+  <ol class="jobs" aria-label="Example, not a real job">
+    <li class="job">
+      <div class="rank" aria-hidden="true">1</div>
+      <div class="body">
+        <h3 class="title">Backend engineer</h3>
+        <p class="who">Example Co, remote. Not a real job.</p>
+        <p class="meter-line">
+          <span class="meter" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="off"></i><i class="off"></i></span>
+          <span class="band strong">Strong match</span>
+        </p>
+        <p>You have 7 of 9 required skills.</p>
+        <p class="missing">Missing: Kubernetes, Terraform.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section class="privacy" aria-labelledby="privacy-heading">
+  <h2 id="privacy-heading">What happens to your CV</h2>
+  <p>The file is read in memory, turned into a list of skills and experience, and deleted. Nothing
+    from it is stored on our side.</p>
+  <p>To read the skills, the text of your CV is sent to a language model service (Google Gemini). Do not
+    upload a CV you are not willing to send there.</p>
+  <p>Uploads are limited per network address. The address is turned into a one-way code for the
+    count and is not stored.</p>
+</section>
+{% endblock %}

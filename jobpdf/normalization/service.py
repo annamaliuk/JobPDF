@@ -17,7 +17,7 @@ from typing import Protocol
 import psycopg
 from pydantic import BaseModel, ConfigDict
 
-from jobpdf.extraction.llm import AnthropicToolCaller, MissingAPIKeyError, ToolCaller
+from jobpdf.extraction.llm import MissingAPIKeyError, ToolCaller, default_caller
 from jobpdf.normalization import match_prompt
 from jobpdf.normalization.db import database_url
 from jobpdf.normalization.embedder import TextEmbedder, shared_embedder
@@ -32,7 +32,7 @@ from jobpdf.normalization.matcher import SkillIndexLike, SkillMatcher
 
 log = logging.getLogger(__name__)
 
-LLM_DISABLED = "disabled (ANTHROPIC_API_KEY missing)"
+LLM_DISABLED = "disabled (GEMINI_API_KEY missing)"
 DEFAULT_PROFILE_CONTEXT = "CV"
 INDEX_UNAVAILABLE_VERSION = "unavailable"
 WARM_UP_TEXT = "warm-up"
@@ -205,7 +205,7 @@ def build_normalization_service(
     warm_up: bool = True,
     embedder: TextEmbedder | None = None,
 ) -> NormalizationService:
-    """Build the service from the environment: DATABASE_URL, ANTHROPIC_API_KEY/_MODEL.
+    """Build the service from the environment: DATABASE_URL, LLM_PROVIDER, GEMINI_API_KEY/_MODEL.
 
     Never raises for a missing key or an unreachable database: it degrades and
     says so in logs and ``status()``. ``cache`` is where JM-19's Postgres cache
@@ -216,7 +216,7 @@ def build_normalization_service(
     """
     started = time.perf_counter()
     index = _connect_index(embedder if embedder is not None else shared_embedder())
-    tool_caller = _anthropic_caller()
+    tool_caller = _llm_caller()
     cache = cache if cache is not None else InMemorySkillMatchCache()
     if warm_up and not isinstance(index, _UnavailableIndex):
         _warm_up(index)
@@ -248,11 +248,11 @@ def _connect_index(embedder: TextEmbedder) -> SkillIndexLike:
         return _UnavailableIndex()
 
 
-def _anthropic_caller() -> ToolCaller | None:
+def _llm_caller() -> ToolCaller | None:
     try:
-        return AnthropicToolCaller()
+        return default_caller()
     except MissingAPIKeyError:
-        log.warning("ANTHROPIC_API_KEY missing; LLM tier disabled (exact and vector tiers only)")
+        log.warning("GEMINI_API_KEY missing; LLM tier disabled (exact and vector tiers only)")
         return None
 
 

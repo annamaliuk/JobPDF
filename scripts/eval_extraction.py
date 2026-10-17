@@ -6,9 +6,9 @@ human labels. The JSON report holds counts and metrics only: no CV text,
 names, emails or quotes. Per-resume metrics are keyed by line index.
 
 Replay mode (default) is offline: it serves responses recorded by an earlier
-live run and skips resumes without one. Live mode calls the Anthropic API
-(needs ANTHROPIC_API_KEY in the environment) and records every response, so a
-re-run never sends the same prompt twice. Recordings come from real resumes
+live run and skips resumes without one. Live mode calls the API of LLM_PROVIDER
+(Gemini by default, needs GEMINI_API_KEY in the environment) and records every
+response, so a re-run never sends the same prompt twice. Recordings come from real resumes
 and stay under gitignored data/eval/, never under tests/.
 
 Usage (from the repo root):
@@ -37,13 +37,15 @@ from jobpdf.extraction.eval_metrics import (
 )
 from jobpdf.extraction.extract import ExtractionError, extract_profile
 from jobpdf.extraction.llm import (
-    AnthropicToolCaller,
     LLMResponseError,
     MissingAPIKeyError,
     ReplayMissError,
     ReplayOrRecord,
     ReplayToolCaller,
     ToolCaller,
+    api_errors,
+    default_caller,
+    provider,
 )
 from jobpdf.extraction.plaintext import from_plain_text
 from jobpdf.extraction.prompt import PROMPT_VERSION
@@ -53,12 +55,13 @@ DEFAULT_DATASET = Path("data/external/dataturks/Entity Recognition in Resumes.js
 DEFAULT_RECORDINGS = Path("data/eval/extraction/recordings")
 DEFAULT_OUT = Path("data/eval/extraction/report.json")
 FIELDS = [*TEXT_FIELDS, "graduation_year"]
+KEY_NAME = "GEMINI_API_KEY"
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    if args.mode == "live" and not os.environ.get("ANTHROPIC_API_KEY"):
-        _error("--mode live needs ANTHROPIC_API_KEY in the environment; nothing was sent.")
+    if args.mode == "live" and provider() == "gemini" and not os.environ.get(KEY_NAME):
+        _error(f"--mode live needs {KEY_NAME} in the environment; nothing was sent.")
         return 2
     if not args.dataset.is_file():
         _error(f"dataset not found: {args.dataset} (place it under data/external/dataturks/)")
@@ -66,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         caller, api_errors = _caller(args)
     except MissingAPIKeyError:
-        _error("ANTHROPIC_API_KEY is not set; nothing was sent.")
+        _error(f"{KEY_NAME} is not set; nothing was sent.")
         return 2
 
     resumes, stats, load_warnings = load_dataturks(args.dataset)
@@ -93,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         except api_errors as exc:
             _error(
-                f"Anthropic API call failed on resume {resume.index} ({type(exc).__name__}); "
+                f"LLM API call failed on resume {resume.index} ({type(exc).__name__}); "
                 f"responses recorded so far are kept in {args.recordings}."
             )
             return 3
@@ -151,9 +154,7 @@ def _caller(args: argparse.Namespace) -> tuple[ToolCaller, tuple[type[Exception]
     """The caller for the mode, and the API errors that should stop a live run."""
     if args.mode == "replay":
         return ReplayToolCaller(args.recordings), ()
-    import anthropic  # deferred like in llm.py: replay mode stays offline and cheap
-
-    return ReplayOrRecord(AnthropicToolCaller(), args.recordings), (anthropic.APIError,)
+    return ReplayOrRecord(default_caller(), args.recordings), api_errors()
 
 
 def _sha256(path: Path) -> str:

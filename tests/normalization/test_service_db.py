@@ -28,7 +28,7 @@ def built_service(monkeypatch: pytest.MonkeyPatch) -> Iterator[NormalizationServ
         pytest.skip("DATABASE_URL not set (environment or .env)")
     if not model_is_cached():
         pytest.skip("e5 model not in the local Hugging Face cache; run scripts/build_index.py")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)  # exact and vector tiers only
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)  # exact and vector tiers only
     service = build_normalization_service()
     try:
         if service.status()["index"] != "ok":

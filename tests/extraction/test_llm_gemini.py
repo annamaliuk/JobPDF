@@ -8,7 +8,6 @@ from google.genai import types
 
 from jobpdf.extraction import llm
 from jobpdf.extraction.llm import (
-    AnthropicToolCaller,
     GeminiToolCaller,
     LLMResponseError,
     MissingAPIKeyError,
@@ -128,8 +127,7 @@ def test_model_comes_from_argument_then_environment(monkeypatch) -> None:
 
 def test_default_caller_follows_llm_provider(monkeypatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "k")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
-    assert isinstance(default_caller(), AnthropicToolCaller)
+    assert isinstance(default_caller(), GeminiToolCaller)  # Gemini is the default
     monkeypatch.setenv("LLM_PROVIDER", " Gemini ")
     assert isinstance(default_caller(model="gemini-2.5-pro"), GeminiToolCaller)
     monkeypatch.setenv("LLM_PROVIDER", "groq")
@@ -140,6 +138,7 @@ def test_default_caller_follows_llm_provider(monkeypatch) -> None:
 def test_api_errors_follow_llm_provider(monkeypatch) -> None:
     from google.genai import errors
 
+    assert llm.api_errors() == (errors.APIError,)  # the default provider
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
     assert llm.api_errors() == (errors.APIError,)
 
@@ -147,11 +146,11 @@ def test_api_errors_follow_llm_provider(monkeypatch) -> None:
 def test_load_env_file(tmp_path: Path, monkeypatch) -> None:
     env = tmp_path / ".env"
     env.write_text(
-        "# comment\nGEMINI_API_KEY='file-key'\nLLM_PROVIDER=gemini\nANTHROPIC_API_KEY=\n"
+        "# comment\nGEMINI_API_KEY='file-key'\nLLM_PROVIDER=gemini\nGEMINI_MODEL=\n"
         "JUDGE_MODEL=from-file\n",
         encoding="utf-8",
     )
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
     monkeypatch.setenv("JUDGE_MODEL", "from-env")
 
     loaded = load_env_file(env)
@@ -159,5 +158,5 @@ def test_load_env_file(tmp_path: Path, monkeypatch) -> None:
     assert loaded == ["GEMINI_API_KEY", "LLM_PROVIDER"]
     assert llm.os.environ["GEMINI_API_KEY"] == "file-key"
     assert llm.os.environ["JUDGE_MODEL"] == "from-env"  # the environment wins
-    assert "ANTHROPIC_API_KEY" not in llm.os.environ  # empty values are skipped
+    assert "GEMINI_MODEL" not in llm.os.environ  # empty values are skipped
     assert load_env_file(tmp_path / "missing.env") == []

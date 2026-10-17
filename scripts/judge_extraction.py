@@ -13,17 +13,15 @@ reasons. Per-CV verdicts with reasons, for the human spot check, go to
 
 Replay mode (default) is offline and serves responses recorded by an earlier
 live run, skipping CVs without one. Live mode calls the API of LLM_PROVIDER
-("anthropic", the default, needs ANTHROPIC_API_KEY; "gemini" needs
-GEMINI_API_KEY; "ollama" needs no key and runs a local model) and records every
-response, so a re-run never pays twice. Keys and LLM_PROVIDER may sit in the
-repo's gitignored .env. JUDGE_MODEL picks the judge's model; extraction keeps
-ANTHROPIC_MODEL, GEMINI_MODEL or OLLAMA_MODEL.
+("gemini", the default, needs GEMINI_API_KEY; "ollama" needs no key and runs a
+local model) and records every response, so a re-run never pays twice. Keys and
+LLM_PROVIDER may sit in the repo's gitignored .env. JUDGE_MODEL picks the judge's
+model; extraction keeps GEMINI_MODEL or OLLAMA_MODEL.
 
 Usage (from the repo root):
     uv run python scripts/judge_extraction.py
     uv run python scripts/judge_extraction.py --mode live --limit 3
-    LLM_PROVIDER=gemini JUDGE_MODEL=gemini-2.5-flash \\
-        uv run python scripts/judge_extraction.py --mode live
+    JUDGE_MODEL=gemini-2.5-pro uv run python scripts/judge_extraction.py --mode live
     uv run python scripts/judge_extraction.py --mode live \\
         --dataturks "data/external/dataturks/Entity Recognition in Resumes.json"
 """
@@ -83,7 +81,7 @@ DEFAULT_OUT = Path("data/eval/judge/report.json")
 DEFAULT_VERDICTS = Path("data/eval/judge/verdicts")
 DEFAULT_DATATURKS_LIMIT = 20
 SUFFIXES = (".pdf", ".docx")
-KEY_NAMES = {"anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY"}
+KEY_NAMES = {"gemini": "GEMINI_API_KEY"}
 _SKIPPABLE = (ReplayMissError, ExtractionError, JudgeError, LLMResponseError)
 
 

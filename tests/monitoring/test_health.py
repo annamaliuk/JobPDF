@@ -28,7 +28,7 @@ NOW = datetime(2026, 10, 17, 12, 0, tzinfo=timezone.utc)
 SECRET = "sk-ant-SECRET-0123456789"
 GOOD_STATUS = {
     "index": "ok", "taxonomy_version": "v1.2.1", "index_version": "idx1",
-    "matcher_prompt_version": "p1", "llm": "enabled", "llm_model": "claude-x", "cache": "postgres",
+    "matcher_prompt_version": "p1", "llm": "enabled", "llm_model": "gemini-x", "cache": "postgres",
 }
 
 
@@ -87,7 +87,7 @@ def stats_row(source="remotive", count=3, seen_ago_s=3600, posted_ago_s=7200):
 
 def run(*, conn=None, normalizer=None, keys=None, env=None, base=None, **kwargs):
     conn = conn if conn is not None else FakeConn([stats_row()])
-    env = {"ANTHROPIC_API_KEY": SECRET} if env is None else env
+    env = {"GEMINI_API_KEY": SECRET} if env is None else env
     if base is None:
         base = Path("/nonexistent-cache")
     return build_health(connect=lambda: conn, normalizer=normalizer, api_keys=keys,
@@ -142,7 +142,7 @@ def test_an_unreachable_database_is_down_and_the_service_answers_503() -> None:
     def refuse():
         raise psycopg.OperationalError("could not connect to postgresql://u:" + SECRET + "@h/db")
 
-    report = build_health(connect=refuse, environ={"ANTHROPIC_API_KEY": "x"},
+    report = build_health(connect=refuse, environ={"GEMINI_API_KEY": "x"},
                           cache_base=Path("/none"), clock=lambda: NOW.timestamp())
 
     assert report.status == "down" and report.http_status == 503
@@ -198,7 +198,7 @@ def test_the_default_connection_has_a_short_timeout(monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h/db")
     monkeypatch.setattr(psycopg, "connect", fake_connect)
 
-    report = build_health(environ={"ANTHROPIC_API_KEY": "x"}, cache_base=Path("/none"),
+    report = build_health(environ={"GEMINI_API_KEY": "x"}, cache_base=Path("/none"),
                           clock=lambda: NOW.timestamp())
 
     assert seen == {"url": "postgresql://u:p@h/db", "connect_timeout": 3}
@@ -328,15 +328,21 @@ def test_a_failing_status_call_is_check_failed_not_a_crash(caplog) -> None:
 
 
 def test_the_llm_key_is_reported_as_set_or_missing_never_its_value() -> None:
-    present = run(env={"ANTHROPIC_API_KEY": SECRET})
+    present = run(env={"GEMINI_API_KEY": SECRET})
     absent = run(env={})
-    blank = run(env={"ANTHROPIC_API_KEY": "   "})
+    blank = run(env={"GEMINI_API_KEY": "   "})
 
     assert present.checks["llm"].status == "ok" and present.checks["llm"].data == {"key": "set"}
     for report in (absent, blank):
         assert (report.checks["llm"].status, report.checks["llm"].code) == ("down", "key_missing")
         assert report.checks["llm"].data == {"key": "missing"} and report.http_status == 503
     assert SECRET not in present.model_dump_json()
+
+
+def test_a_local_ollama_model_needs_no_llm_key() -> None:
+    check = run(env={"LLM_PROVIDER": "Ollama"}).checks["llm"]
+
+    assert (check.status, check.code, check.data) == ("ok", None, {"key": "not needed"})
 
 
 def test_api_keys_are_reported_as_set_or_missing() -> None:
@@ -483,7 +489,7 @@ def test_the_normalization_status_is_asked_for_once_because_it_probes_the_databa
 
 def test_no_secret_or_address_appears_anywhere_in_the_report(tmp_path, monkeypatch) -> None:
     write_cache(tmp_path, "remotive", 60)
-    env = {"ANTHROPIC_API_KEY": SECRET, "JOOBLE_API_KEY": SECRET + "-j",
+    env = {"GEMINI_API_KEY": SECRET, "JOOBLE_API_KEY": SECRET + "-j",
            "ADZUNA_APP_ID": SECRET + "-a", "ADZUNA_APP_KEY": SECRET + "-b"}
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:" + SECRET + "@dbhost/db")
 
@@ -505,7 +511,7 @@ def test_a_slow_database_check_shows_its_latency() -> None:
         time.sleep(0.03)
         return FakeConn([stats_row()])
 
-    report = build_health(connect=slow, environ={"ANTHROPIC_API_KEY": "x"},
+    report = build_health(connect=slow, environ={"GEMINI_API_KEY": "x"},
                           cache_base=Path("/none"), clock=lambda: NOW.timestamp())
 
     assert report.checks["database"].latency_ms >= 25
@@ -541,7 +547,7 @@ def real_conn() -> Iterator:
 
 
 def real_run(make, **kwargs):
-    return build_health(connect=make, environ={"ANTHROPIC_API_KEY": "x"},
+    return build_health(connect=make, environ={"GEMINI_API_KEY": "x"},
                         cache_base=Path("/none"), clock=lambda: NOW.timestamp(), **kwargs)
 
 
