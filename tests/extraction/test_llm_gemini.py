@@ -78,6 +78,31 @@ def test_forces_the_one_function_and_maps_the_result() -> None:
     assert result.model == "gemini-2.5-flash-001"
 
 
+def test_thinking_is_off_for_flash_unless_configured(monkeypatch) -> None:
+    fn = SimpleNamespace(name=TOOL["name"], args={"skills": []})
+    caller, models = caller_with(response([fn]))
+    call(caller)
+    assert models.requests[0]["config"].thinking_config.thinking_budget == 0
+
+    pro = GeminiToolCaller(model="gemini-2.5-pro", api_key="k")
+    assert pro.thinking_budget is None
+    monkeypatch.setenv("GEMINI_THINKING_BUDGET", "512")
+    assert GeminiToolCaller(api_key="k").thinking_budget == 512
+
+
+def test_min_interval_spaces_calls(monkeypatch) -> None:
+    monkeypatch.setenv("GEMINI_MIN_INTERVAL_S", "30")
+    fn = SimpleNamespace(name=TOOL["name"], args={"skills": []})
+    caller, _ = caller_with(response([fn]))
+    clock = iter([1000.0, 1000.0, 1010.0, 1030.0])
+    sleeps = []
+    monkeypatch.setattr(llm.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(llm.time, "sleep", sleeps.append)
+    call(caller)  # first call: no wait
+    call(caller)  # 10 s later: waits the other 20 s
+    assert sleeps == [20.0]
+
+
 def test_truncated_answer_reads_as_max_tokens() -> None:
     caller, _ = caller_with(response(None, finish=types.FinishReason.MAX_TOKENS))
     result = call(caller)

@@ -1,7 +1,7 @@
 """LLM access behind one small interface (JM-11).
 
-Every LLM call in the project goes through ``ToolCaller``: Anthropic and Gemini
-(real; ``LLM_PROVIDER`` picks one, see ``default_caller``), Fake (scripted, for
+Every LLM call in the project goes through ``ToolCaller``: Anthropic, Gemini and
+Ollama (real; ``LLM_PROVIDER`` picks one, see ``default_caller``), Fake (scripted, for
 tests), Replay (recorded responses), Recording (wraps a real caller to produce
 replay fixtures) and ReplayOrRecord (the offline-first mix the evaluation
 scripts use). Tests never touch the network.
@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -26,7 +27,17 @@ MAX_RETRIES = 3
 # its retries wait longer than the SDK default.
 GEMINI_RETRY_ATTEMPTS = 6
 GEMINI_RETRY_MAX_DELAY_S = 60.0
-PROVIDERS = ("anthropic", "gemini")
+# Flash models think by default, and thinking tokens count against
+# max_output_tokens: long CVs then end in MAX_TOKENS or MALFORMED_FUNCTION_CALL.
+# Thinking is off for them unless GEMINI_THINKING_BUDGET says otherwise.
+DEFAULT_FLASH_THINKING_BUDGET = 0
+DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
+DEFAULT_OLLAMA_HOST = "http://localhost:11434"
+# Ollama's own default window (4096 tokens) is too small for a CV plus the prompt.
+DEFAULT_OLLAMA_NUM_CTX = 16384
+# A local model on a laptop CPU can take minutes for one long answer.
+OLLAMA_TIMEOUT_S = 3600
+PROVIDERS = ("anthropic", "gemini", "ollama")
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
@@ -40,6 +51,10 @@ class LLMResponseError(RuntimeError):
 
 class ReplayMissError(LookupError):
     """No recorded response for this exact prompt."""
+
+
+class OllamaError(RuntimeError):
+    """The local Ollama server could not be reached or refused the request."""
 
 
 @dataclass(frozen=True)
@@ -129,14 +144,27 @@ class GeminiToolCaller:
 
         self._types = types
         self.model = model or os.environ.get("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL
+        budget = os.environ.get("GEMINI_THINKING_BUDGET")
+        self.thinking_budget = (
+            int(budget) if budget
+            else DEFAULT_FLASH_THINKING_BUDGET if "flash" in self.model else None
+        )
         retry = types.HttpRetryOptions(
             attempts=GEMINI_RETRY_ATTEMPTS, max_delay=GEMINI_RETRY_MAX_DELAY_S
         )
         self._client = genai.Client(
             api_key=key, http_options=types.HttpOptions(retry_options=retry)
         )
+        # Free-tier models with a small tokens-per-minute cap (Gemma: 16K) fail
+        # with 5xx when long calls come back to back; GEMINI_MIN_INTERVAL_S spaces them.
+        self.min_interval_s = float(os.environ.get("GEMINI_MIN_INTERVAL_S") or 0)
+        self._last_call = 0.0
 
     def call(self, *, system: str, user: str, tool: dict, max_tokens: int) -> ToolCallResult:
+        wait = self._last_call + self.min_interval_s - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        self._last_call = time.monotonic()
         types = self._types
         declaration = types.FunctionDeclaration(
             name=tool["name"],
@@ -147,6 +175,10 @@ class GeminiToolCaller:
             system_instruction=system,
             temperature=0,
             max_output_tokens=max_tokens,
+            thinking_config=(
+                types.ThinkingConfig(thinking_budget=self.thinking_budget)
+                if self.thinking_budget is not None else None
+            ),
             tools=[types.Tool(function_declarations=[declaration])],
             tool_config=types.ToolConfig(
                 function_calling_config=types.FunctionCallingConfig(
@@ -185,6 +217,88 @@ def _gemini_finish_reason(response: Any) -> str | None:
     return getattr(reason, "name", None) or (str(reason) if reason else None)
 
 
+class OllamaToolCaller:
+    """A local model served by Ollama; no key, and nothing leaves the machine.
+
+    Ollama has no forced tool call, so the tool's JSON schema goes in ``format``
+    (structured output) and the answer is the tool input itself. The tool's
+    description is appended to the system prompt, where a tool call would carry it.
+    """
+
+    def __init__(self, model: str | None = None, host: str | None = None) -> None:
+        self.model = model or os.environ.get("OLLAMA_MODEL") or DEFAULT_OLLAMA_MODEL
+        self.host = (host or os.environ.get("OLLAMA_HOST") or DEFAULT_OLLAMA_HOST).rstrip("/")
+        if "://" not in self.host:
+            self.host = f"http://{self.host}"
+        self.num_ctx = int(os.environ.get("OLLAMA_NUM_CTX") or DEFAULT_OLLAMA_NUM_CTX)
+        # Optional ceiling on answer length: on a CPU a looping answer otherwise runs
+        # for an hour before max_tokens stops it. A capped answer reads as truncated.
+        cap = os.environ.get("OLLAMA_MAX_PREDICT")
+        self.max_predict = int(cap) if cap else None
+
+    def call(self, *, system: str, user: str, tool: dict, max_tokens: int) -> ToolCallResult:
+        instructions = (
+            f"{system}\n\nAnswer with one JSON object: the input of the "
+            f"{tool['name']!r} tool. {tool['description']}"
+        )
+        response = self._post("/api/chat", {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": user},
+            ],
+            "format": tool["input_schema"],
+            "stream": False,
+            "options": {
+                "temperature": 0,
+                "num_predict": min(max_tokens, self.max_predict or max_tokens),
+                "num_ctx": self.num_ctx,
+            },
+        })
+        # Mapped to the Anthropic spelling, which the extractor's retry checks for.
+        done = response.get("done_reason") or ""
+        stop_reason = "max_tokens" if done == "length" else done
+        content = (response.get("message") or {}).get("content") or ""
+        try:
+            tool_input = json.loads(content)
+        except json.JSONDecodeError:
+            if stop_reason != "max_tokens":
+                raise LLMResponseError(
+                    f"Expected a JSON {tool['name']!r} input, got unparseable text "
+                    f"(done_reason={done!r})"
+                ) from None
+            tool_input = {}
+        if not isinstance(tool_input, dict):
+            raise LLMResponseError(f"Expected a JSON object for {tool['name']!r}")
+        return ToolCallResult(
+            tool_input=tool_input,
+            stop_reason=stop_reason,
+            input_tokens=response.get("prompt_eval_count") or 0,
+            output_tokens=response.get("eval_count") or 0,
+            model=response.get("model") or self.model,
+        )
+
+    def _post(self, path: str, body: dict) -> dict:
+        import urllib.error
+        import urllib.request
+
+        request = urllib.request.Request(
+            self.host + path,
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=OLLAMA_TIMEOUT_S) as reply:
+                return json.loads(reply.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:300]
+            raise OllamaError(f"Ollama answered HTTP {exc.code}: {detail}") from None
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            raise OllamaError(
+                f"Cannot reach Ollama at {self.host} ({exc}). Is the Ollama app running?"
+            ) from None
+
+
 def provider() -> str:
     """The provider named by LLM_PROVIDER (default "anthropic")."""
     name = (os.environ.get("LLM_PROVIDER") or "anthropic").strip().lower()
@@ -197,11 +311,15 @@ def default_caller(model: str | None = None) -> ToolCaller:
     """The real caller for LLM_PROVIDER; raises MissingAPIKeyError without its key."""
     if provider() == "gemini":
         return GeminiToolCaller(model=model)
+    if provider() == "ollama":
+        return OllamaToolCaller(model=model)
     return AnthropicToolCaller(model=model)
 
 
 def api_errors() -> tuple[type[Exception], ...]:
     """The SDK errors that mean a live call failed, for the chosen provider."""
+    if provider() == "ollama":
+        return (OllamaError,)
     if provider() == "gemini":
         from google.genai import errors
 
