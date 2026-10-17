@@ -36,7 +36,7 @@ def dag(bag):
 
 def test_the_dag_file_loads_without_errors(bag) -> None:
     assert bag.import_errors == {}
-    assert {"remotive_fetch", "job_sources_fetch"} <= set(bag.dags)
+    assert {"remotive_fetch", "job_sources_fetch", "vacancy_ingest"} <= set(bag.dags)
 
 
 def test_it_is_one_fetch_task_that_never_catches_up_or_overlaps(dag) -> None:
@@ -122,3 +122,39 @@ def test_a_task_runs_its_own_source_and_reports_a_summary(sources_dag, monkeypat
     assert seen == [t.task_id.removeprefix("fetch_") for t in sources_dag.tasks]
     assert results == {t.task_id: {"source": t.task_id.removeprefix("fetch_")}
                        for t in sources_dag.tasks}
+
+
+# --- vacancy_ingest (JM-33) ---------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def ingest_dag(bag):
+    return bag.dags["vacancy_ingest"]
+
+
+def test_ingestion_is_one_task_that_never_catches_up_overlaps_or_retries(ingest_dag) -> None:
+    assert [t.task_id for t in ingest_dag.tasks] == ["ingest"]
+    assert ingest_dag.catchup is False and ingest_dag.max_active_runs == 1
+    task = ingest_dag.get_task("ingest")
+    assert task.retries == 0 and task.execution_timeout == timedelta(hours=1)
+
+
+def test_ingestion_runs_after_both_fetch_dags_every_time(ingest_dag, dag, sources_dag) -> None:
+    def runs(d):
+        it = croniter(d.schedule_interval, datetime(2026, 10, 1, tzinfo=timezone.utc))
+        return [it.get_next(datetime) for _ in range(9)]
+
+    fetch_runs = sorted(runs(dag) + runs(sources_dag))
+    for ingest_run in runs(ingest_dag)[1:]:
+        before = [r for r in fetch_runs if r < ingest_run]
+        assert before and ingest_run - before[-1] >= timedelta(minutes=20)
+        assert ingest_run - before[-1] <= timedelta(minutes=40)
+
+
+def test_the_ingest_task_runs_the_ingestion_and_returns_its_summary(
+        ingest_dag, monkeypatch) -> None:
+    from jobpdf.ingestion import vacancies
+
+    monkeypatch.setattr(vacancies, "run_ingest", lambda: {"sources": ["summary"]})
+
+    assert ingest_dag.get_task("ingest").python_callable() == {"sources": ["summary"]}
