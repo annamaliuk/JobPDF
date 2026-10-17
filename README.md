@@ -38,6 +38,7 @@ You need Python 3.10+, [uv](https://docs.astral.sh/uv/) and Docker (for Postgres
 cp .env.example .env            # then fill it in, see "Settings"
 uv sync                         # installs the app and the dev tools
 docker compose up -d db         # Postgres 16 with pgvector on 127.0.0.1:5432
+uv run python scripts/migrate.py   # creates the tables (what it does: sql/README.md)
 ```
 
 The skill index needs the ESCO taxonomy once. Download the ESCO skills export (CSV, English and
@@ -90,10 +91,12 @@ Docker Compose v2 is required.
 docker compose build
 ```
 
-**3. Start the database and build the skill index** (once; repeat only when the taxonomy changes):
+**3. Start the database, create the tables and build the skill index** (once; repeat only when the
+taxonomy changes):
 
 ```bash
 docker compose up -d db
+docker compose run --rm migrate                    # creates the tables, see sql/README.md
 cp /path/to/esco.zip data/esco.zip
 docker compose run --rm tools python scripts/build_taxonomy.py --zip data/esco.zip
 docker compose run --rm tools python scripts/build_index.py
@@ -156,6 +159,7 @@ Without Airflow, the same three scripts from the host's crontab do the job:
 | `proxy` (Caddy) | 80, 443 | the only public entry; HTTPS certificate is automatic; 6 MB body cap |
 | `app` | 8000 (internal) | read-only file system, no Linux capabilities, uploads in memory (`tmpfs`) |
 | `db` | 127.0.0.1:5432 | never exposed to the network |
+| `migrate` | none | runs once on every `up`, applies new `sql/*.sql` files and exits; `app` and `airflow-init` wait for it |
 | `airflow-*` | 127.0.0.1:8080 | only with `--profile airflow` |
 | `tools` | none | `docker compose run --rm tools python scripts/<name>.py` |
 
@@ -186,8 +190,12 @@ after the first real CV.
 
 ```bash
 git pull
-docker compose up -d --build            # rebuilds changed images, restarts changed services
+docker compose up -d --build            # rebuilds changed images, applies new migrations, restarts
 ```
+
+Schema changes are migrations in `sql/` and are applied by the `migrate` service on that `up`
+(`docker compose logs migrate` shows what it did). If one fails, `up` reports it and the new app
+starts only after you fix it and run `up` again. See [sql/README.md](sql/README.md).
 
 If the taxonomy or the embedding model changed, rebuild the index
 (`docker compose run --rm tools python scripts/build_index.py`); the health report shows the
@@ -258,6 +266,7 @@ Other endpoints:
 
 | Symptom | Look at | Likely cause and fix |
 |---|---|---|
+| `docker compose up` stops with `migrate exited with code 1` | `docker compose logs migrate` | a migration failed or an applied file was edited; the message gives a code and a version, the table in `sql/README.md` says what to do |
 | `app` never becomes healthy | `docker compose logs app` | `JOBPDF_RATE_LIMIT_SECRET` missing (the app refuses to start without it), or `db` not ready |
 | `/health` → `database` `unreachable` | `docker compose ps db` | database is down or `POSTGRES_PASSWORD` differs from the volume's |
 | `normalization` `index_unavailable` | | skill index not built: run `build_taxonomy.py` and `build_index.py` |
