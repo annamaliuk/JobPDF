@@ -1,8 +1,9 @@
 # JobPDF on one machine (JM-17 database, JM-36 app, proxy and Airflow).
 #
-#   docker compose up -d --build                  db + app + proxy
+#   docker compose up -d --build                  db, migrations, then app + proxy
 #   docker compose --profile airflow up -d        also the Airflow scheduler and web UI
 #   docker compose run --rm tools python scripts/<script>.py     one-off scripts
+#   docker compose run --rm migrate python scripts/migrate.py --status   what is applied
 #
 # The README has the full first-time setup. Everything reads its settings from .env; the
 # containers get only the variables they need, and DATABASE_URL here points at the "db"
@@ -58,6 +59,26 @@ services:
       timeout: 5s
       retries: 10
 
+  # JM-38: applies sql/*.sql (the ones not applied yet) and exits. The app and Airflow wait for
+  # it, so a failed migration stops them from starting against a schema that is not ready.
+  # It needs only the database address: no API keys. Look at the result with
+  #   docker compose logs migrate
+  migrate:
+    build: *app-build
+    image: jobpdf-app
+    restart: "no"
+    user: *user
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *database-url
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: []
+    command: ["python", "scripts/migrate.py"]
+
   app:
     build: *app-build
     image: jobpdf-app
@@ -66,6 +87,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       <<: *jobpdf-env
       JOBPDF_API_KEYS: ${JOBPDF_API_KEYS:-}
@@ -130,6 +153,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment: &airflow-env
       <<: [*jobpdf-env, *ingestion-env]
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
