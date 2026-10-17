@@ -143,3 +143,53 @@ def test_the_check_script_renders_found_items_with_their_lines() -> None:
             in text)
     assert "| min years: 5 |" in text
     assert "| language: English | Fluent English, written and spoken | |" in text
+
+
+# --- regressions from the first check on real postings (2026-10-17) -------------------
+
+REAL_VOCAB = SkillVocabulary.from_norms(
+    ["python", "sql", "tableau", "ruby", "grpc", "redis", "communication", "innovation",
+     "creativity", "reliability", "help customers", "make decisions", "pregnancy",
+     "speak spanish", "cantonese", "bookkeeping", "attention to detail"],
+    weak=["communication", "innovation", "creativity", "reliability", "help customers",
+          "make decisions", "pregnancy", "speak spanish", "bookkeeping",
+          "attention to detail"],
+)
+
+REAL_HTML = """
+<p>Everything we do is the result of the creativity of our team, and its reliability.</p>
+<p><strong>What you'll do</strong></p>
+<ul><li>Help customers adopt the platform and make decisions with Python</li></ul>
+<p><strong>Requirements</strong></p>
+<ul><li>Strong communication and attention to detail</li>
+<li>Knowledge of Tableau and SQL is a huge plus</li>
+<li>You speak Spanish at a native level.</li>
+<li>Must speak, read and write Cantonese and English.</li>
+<li>Experience with Ruby or gRPC is highly desirable.</li></ul>
+<p>Your Future at Acme</p>
+<p>Acme is a place where you can grow your career and fuel your innovation.</p>
+<p>Our policies are based on merit, regardless of race, sex (including pregnancy), age.</p>
+"""
+
+
+def test_weak_matches_count_only_in_requirement_sections() -> None:
+    result = RulesExtractor(vocabulary=REAL_VOCAB).extract(posting(1, description=REAL_HTML))
+    assert result.required_skills == ["Python", "communication", "attention to detail"]
+    assert result.preferred_skills == ["Tableau", "SQL", "Ruby", "gRPC"]
+    assert result.languages == ["Spanish", "English", "Chinese"]
+    assert result.responsibilities == [
+        "Help customers adopt the platform and make decisions with Python"]
+
+
+def test_weak_matches_count_anywhere_in_a_posting_without_sections() -> None:
+    text = "<p>You will do bookkeeping and invoicing for our clients every day.</p>" * 4
+    result = RulesExtractor(vocabulary=REAL_VOCAB).extract(posting(1, description=text))
+    assert result.required_skills[0] == "bookkeeping"
+
+
+def test_boilerplate_sentences_set_nothing() -> None:
+    text = ("<h3>Requirements</h3><ul><li>Python</li></ul><p>We are an equal opportunity "
+            "employer and offer 401(k), 5 years of tenure bonus, pregnancy leave.</p>" * 3)
+    result = RulesExtractor(vocabulary=REAL_VOCAB).extract(posting(1, description=text))
+    assert result.min_years_experience is None
+    assert "pregnancy" not in result.required_skills

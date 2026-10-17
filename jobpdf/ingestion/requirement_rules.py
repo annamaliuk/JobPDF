@@ -10,6 +10,10 @@ on as its quote. Steps:
 2. ``SkillVocabulary.scan``: the longest taxonomy alias (JM-16 ``alias_norm``) of up to
    ``MAX_ALIAS_WORDS`` words, line by line. Very short or everyday-word aliases ("Go", "R",
    "Spring") only count when written with a capital on a line that names another skill.
+   Aliases of ESCO's non-digital skills ("innovation", "help customers") are "weak": they
+   count only in requirement sections, because in company blurbs and duties they are
+   ordinary words. Boilerplate sentences (equal opportunity, benefits, how to apply) are
+   never read.
 3. Years, education and languages: regular expressions over requirement lines, skipping
    lines that only say "nice to have".
 4. Responsibilities: the lines of the responsibilities sections (bullets when there are).
@@ -89,6 +93,17 @@ PREFERRED_CUES = [
     "von vorteil", "wünschenswert", "ein plus", "idealerweise",
     "буде плюсом", "буде перевагою", "перевагою", "бажано",
 ]
+# "a huge plus", "a big plus"; not "5 plus years".
+_PLUS_CUE = re.compile(r"\b(?:a|an|huge|big|great|strong|definite|real|nice)\s+plus\b",
+                       re.IGNORECASE)
+# Sentences that are about the employer, not the job: no skill or requirement is read there.
+_BOILERPLATE = re.compile(
+    r"equal (?:employment )?opportunit|regardless of|discriminat|protected (?:veteran|by law)|"
+    r"reasonable accommodation|affirmative action|e-?verify|benefits? (?:include|to support)|"
+    r"paid time off|401\(?k|stock purchase|health insurance|how did you hear|"
+    r"application process|employee referral|privacy (?:policy|notice)",
+    re.IGNORECASE,
+)
 
 # Real skills that are also everyday words: they need a capital and another skill nearby.
 AMBIGUOUS = {
@@ -103,6 +118,9 @@ GENERIC = {
     "technology", "technologies", "systems", "system", "solutions", "experience",
     "knowledge", "skills", "skill", "office", "computer", "internet", "email", "online",
     "digital", "platform", "process", "processes", "quality", "project", "projects",
+    "technical skills", "soft skills", "lead", "plan", "design", "call", "source", "clean",
+    "discipline", "schedule", "feedback", "reporting", "activity", "interaction", "craft",
+    "history", "purchase", "rights", "brands", "fuel", "did", "scratch", "reserve",
 }
 
 _PUNCT = re.compile(r"[^\w]+")
@@ -138,20 +156,30 @@ class SectionLine:
 
 
 def split_sections(lines: Sequence[Line]) -> list[SectionLine]:
-    """Each non-heading line with the section it sits in."""
+    """Each non-heading line with the section it sits in. A title-shaped line opens the
+    section it names; one that names none ends the current section and stays a line."""
     current = GENERAL
     out: list[SectionLine] = []
     for line in lines:
         if line.is_heading:
             current = classify_heading(line.text)
             continue
+        if line.is_title:
+            current = classify_heading(line.text)
+            if current != GENERAL:
+                continue
         out.append(SectionLine(line, current))
     return out
 
 
 def has_preferred_cue(sentence: str) -> bool:
     key = phrase_key(sentence)
-    return any(_contains(key, phrase_key(cue)) for cue in PREFERRED_CUES)
+    return (any(_contains(key, phrase_key(cue)) for cue in PREFERRED_CUES)
+            or bool(_PLUS_CUE.search(sentence)))
+
+
+def is_boilerplate(sentence: str) -> bool:
+    return bool(_BOILERPLATE.search(sentence))
 
 
 def sentences(text: str) -> list[str]:
@@ -167,30 +195,43 @@ class SkillHit:
     norm: str  # normalize(text): equals a taxonomy alias_norm
     quote: str  # the sentence it was found in
     preferred: bool
+    strong: bool = True  # False: a non-digital ESCO skill, trusted in requirement sections only
 
 
 @dataclass
 class SkillVocabulary:
     """Taxonomy aliases by ``alias_norm``. ``complete`` is False when only the committed
-    custom skills could be read (the full ESCO build is missing)."""
+    custom skills could be read (the full ESCO build is missing). ``weak`` holds the norms
+    that only name non-digital ESCO skills."""
 
     norms: set[str] = field(default_factory=set)
     complete: bool = True
     max_words: int = 1
+    weak: set[str] = field(default_factory=set)
 
     @classmethod
-    def from_norms(cls, norms: Iterable[str], complete: bool = True) -> SkillVocabulary:
+    def from_norms(cls, norms: Iterable[str], complete: bool = True,
+                   weak: Iterable[str] = ()) -> SkillVocabulary:
         kept = {n for n in norms if n and n not in GENERIC}
         longest = max((len(n.split()) for n in kept), default=1)
-        return cls(kept, complete, min(longest, MAX_ALIAS_WORDS))
+        return cls(kept, complete, min(longest, MAX_ALIAS_WORDS), set(weak) & kept)
 
     @classmethod
     def load(cls, taxonomy_dir: Path = Path("data/taxonomy")) -> SkillVocabulary:
-        """``aliases.csv`` from the taxonomy build; without it, ``custom_skills.csv``."""
+        """``aliases.csv`` from the taxonomy build (with ``concepts.csv`` saying which skills
+        are digital); without it, ``custom_skills.csv``."""
         aliases = taxonomy_dir / "aliases.csv"
         if aliases.is_file():
+            strong_ids = _strong_concepts(taxonomy_dir / "concepts.csv")
+            norms: set[str] = set()
+            strong: set[str] = set()
             with aliases.open(encoding="utf-8", newline="") as f:
-                return cls.from_norms(row["alias_norm"] for row in csv.DictReader(f))
+                for row in csv.DictReader(f):
+                    norms.add(row["alias_norm"])
+                    if (strong_ids is None or row["canonical_id"] in strong_ids
+                            or row.get("alias_kind") == "custom"):
+                        strong.add(row["alias_norm"])
+            return cls.from_norms(norms, weak=norms - strong)
         custom = taxonomy_dir / "custom_skills.csv"
         norms: list[str] = []
         if custom.is_file():
@@ -201,9 +242,11 @@ class SkillVocabulary:
         return cls.from_norms(norms, complete=False)
 
     def scan(self, text: str, preferred: bool = False) -> list[SkillHit]:
-        """Skills named in one line, in order, each once."""
+        """Skills named in one line, in order, each once; boilerplate sentences skipped."""
         hits: list[SkillHit] = []
         for sentence in sentences(text):
+            if is_boilerplate(sentence):
+                continue
             pref = preferred or has_preferred_cue(sentence)
             hits += self._scan_sentence(sentence, pref)
         unambiguous = [h for h in hits if not _is_ambiguous(h.norm)]
@@ -228,7 +271,8 @@ class SkillVocabulary:
                 span = " ".join(tokens[i:i + size])
                 norm = normalize(span)
                 if norm in self.norms:
-                    hits.append(SkillHit(span, norm, sentence, preferred))
+                    hits.append(SkillHit(span, norm, sentence, preferred,
+                                         norm not in self.weak))
                     i += size
                     break
             else:
@@ -236,9 +280,19 @@ class SkillVocabulary:
                     for part in tokens[i].split("/"):
                         norm = normalize(part)
                         if part and norm in self.norms:
-                            hits.append(SkillHit(part, norm, sentence, preferred))
+                            hits.append(SkillHit(part, norm, sentence, preferred,
+                                                 norm not in self.weak))
                 i += 1
         return hits
+
+
+def _strong_concepts(concepts_csv: Path) -> set[str] | None:
+    """IDs of digital or custom concepts; None when concepts.csv is missing (all trusted)."""
+    if not concepts_csv.is_file():
+        return None
+    with concepts_csv.open(encoding="utf-8", newline="") as f:
+        return {row["canonical_id"] for row in csv.DictReader(f)
+                if row.get("is_digital") == "true" or row.get("source") == "custom"}
 
 
 def _trim(token: str) -> str:
@@ -337,11 +391,19 @@ LANGUAGES: dict[str, list[str]] = {  # name -> regex stems
     "Italian": [r"italian", r"italienisch\w*", r"італійськ\w*"],
     "Portuguese": [r"portuguese", r"portugiesisch\w*", r"португальськ\w*"],
     "Dutch": [r"dutch", r"niederländisch\w*", r"нідерландськ\w*"],
+    "Russian": [r"russian", r"russisch\w*", r"російськ\w*"],
+    "Chinese": [r"chinese", r"mandarin", r"cantonese", r"chinesisch\w*", r"китайськ\w*"],
+    "Japanese": [r"japanese", r"japanisch\w*", r"японськ\w*"],
+    "Korean": [r"korean", r"koreanisch\w*", r"корейськ\w*"],
+    "Arabic": [r"arabic", r"arabisch\w*", r"арабськ\w*"],
+    "Turkish": [r"turkish", r"türkisch\w*", r"турецьк\w*"],
+    "Hindi": [r"hindi"],
 }
 _LANGUAGE_RES = {name: re.compile(r"(?<!\w)(?:" + "|".join(stems) + r")(?!\w)", re.IGNORECASE)
                  for name, stems in LANGUAGES.items()}
 _PROFICIENCY = re.compile(
     r"(?<!\w)(?:fluent\w*|fluency|proficien\w*|native|business|professional|written|spoken|"
+    r"speak\w*|read and write|bilingual|"
     r"excellent|strong|good|advanced|upper|intermediate|level|language|communication|"
     r"[abc][12]|fließend\w*|verhandlungssicher\w*|sehr gute\w*|gute\w*|kenntnisse|"
     r"muttersprach\w*|sprache\w*|рівень|рівні|вільн\w*|мов[аиою]\w*|знання)(?!\w)",
@@ -359,8 +421,10 @@ def languages_in(sentence: str) -> list[str]:
 
 
 def is_language_name(text: str) -> bool:
-    """ESCO lists languages as skills ("English"); they belong in ``languages`` instead."""
-    return any(p.fullmatch(text) for p in _LANGUAGE_RES.values())
+    """ESCO lists languages as skills ("English", "speak Spanish"); they belong in
+    ``languages`` instead."""
+    return any(_language_word(m.group(0))
+               for p in _LANGUAGE_RES.values() for m in p.finditer(text))
 
 
 def _language_word(word: str) -> bool:
