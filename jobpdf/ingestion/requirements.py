@@ -25,7 +25,7 @@ from jobpdf.normalization.text import normalize
 from jobpdf.ranking.models import EducationRequirement
 
 TAGS_VERSION = "tags"
-RULES_VERSION = "rules-3"  # bump when a rule or word list changes
+RULES_VERSION = "rules-4"  # bump when a rule or word list changes
 
 # Warning codes.
 TAGS_FALLBACK = "tags_fallback"
@@ -90,7 +90,9 @@ class RulesExtractor:
     Weak (non-digital ESCO) matches count only in requirement and nice-to-have sections, or
     anywhere when the posting has no sections at all. A skill is nice-to-have when it sits
     in a nice-to-have section or in a sentence with a cue such as "is a plus"; anything
-    named in both lists stays required. Years, education and languages are read from
+    named in both lists stays required. Skills given as options or examples ("AWS, Azure,
+    or GCP", "e.g. Jira") are nice-to-have, and "ideally" only qualifies what follows it.
+    Years, education and languages are read from
     requirement and general lines only; lines that only state a preference, and boilerplate
     (equal opportunity, benefits), never set them. When the text names fewer than
     ``FEW_SKILLS`` skills, the source's tags are added as required skills (``tags_added``).
@@ -148,13 +150,15 @@ class RulesExtractor:
                     if language not in languages:
                         languages.append(language)
                         quotes.setdefault(f"language:{language}", sentence)
-                if rules.has_preferred_cue(sentence) or rules.is_boilerplate(sentence):
+                start = rules.preference_start(sentence)
+                if start == 0 or rules.is_boilerplate(sentence):
                     continue
-                found = rules.years_in(sentence)
+                required_part = sentence if start is None else sentence[:start]
+                found = rules.years_in(required_part)
                 if found:
                     years += found
                     quotes.setdefault(f"years:{max(found)}", sentence)
-                if education is None and (hit := rules.education_in(sentence)):
+                if education is None and (hit := rules.education_in(required_part)):
                     education = EducationRequirement(level=hit.level, field=hit.field,
                                                      quote=hit.quote)
         for norm in list(preferred):
