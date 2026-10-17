@@ -86,4 +86,5 @@ RUN chmod -R a+rX /app /opt/hf /opt/requirements.txt
 USER airflow
 
 # The project's locked dependencies go into Airflow's own environment.
-RUN pip install --no-cache-dir -r /opt/requirements.txt
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+    -r /opt/requirements.txt
