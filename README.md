@@ -26,6 +26,7 @@ One Python package, `jobpdf`, runs as two processes that share one Postgres data
 4. [Using the API](#4-using-the-api)
 5. [Operating it](#5-operating-it)
 6. [Settings](#6-settings)
+7. [Continuous integration](#7-continuous-integration)
 
 ---
 
@@ -60,9 +61,9 @@ curl localhost:8000/health
 
 The first start downloads the embedding model (about 470 MB) and takes a minute.
 
-Checks before pushing: `uv run ruff check .` and `uv run pytest`. Tests need no network and
-no API key; the tests marked `db` and `model` skip themselves when Postgres or the model are
-missing.
+Checks before pushing: `uv run ruff check .` and `uv run pytest` (what CI runs, see
+[section 7](#7-continuous-integration)). Tests need no network and no API key; the tests marked
+`db` and `model` skip themselves when Postgres or the model are missing.
 
 ---
 
@@ -289,3 +290,35 @@ All in `.env` (template: `.env.example`). Keys are never printed or logged.
 | `APP_UID` | compose | the user the containers run as |
 | `DOMAIN` | proxy | public host name for the HTTPS certificate |
 | `AIRFLOW_ADMIN_PASSWORD`, `AIRFLOW_SECRET_KEY` | airflow | the UI login and its session secret |
+
+---
+
+## 7. Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and on every push to `main`. It needs no
+secrets (tests use fakes, never the network or an API key), so pull requests from forks run the
+same checks.
+
+| Job | What it checks |
+|---|---|
+| **ruff + pytest** (Python 3.10 and 3.12) | `uv sync --locked`, `ruff check .`, then the tests against a real Postgres 16 with pgvector. The `db` tests run separately and the job fails if fewer than 50 of them actually ran, because they skip quietly when the database is missing. |
+| **Airflow DAG tests** | installs Airflow 2.10.5 (the version in the Dockerfile) and runs `tests/ingestion/test_dag.py`, which skips without Airflow |
+| **Docker images** | `docker compose config` for every profile; builds the `app` and `airflow` images; starts the app image and loads the embedding model offline; loads the three DAGs inside the Airflow image |
+
+**Run the same checks yourself:**
+
+```bash
+uv sync --locked && uv run ruff check .
+docker compose up -d db                                  # needs DATABASE_URL in .env
+uv run pytest -m db -q --junitxml=junit-db.xml && uv run python scripts/check_db_tests_ran.py junit-db.xml
+uv run pytest -m "not db" -q
+```
+
+**When it is red.** `uv sync --locked` failing means `uv.lock` does not match `pyproject.toml`:
+run `uv lock` and commit the result. A failed "Database tests really ran" step means the
+database service did not come up; the log of the "Database tests" step lists the skip reasons.
+
+**Make it count.** In the repository settings (Branches → branch protection rule for `main`),
+require these status checks before merging: `ruff + pytest (Python 3.10)`,
+`ruff + pytest (Python 3.12)`, `Airflow DAG tests` and `Docker images`. The Docker job takes
+several minutes on a cold cache (it downloads the embedding model); later runs reuse the cache.
