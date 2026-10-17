@@ -3,12 +3,12 @@
 ``ingest`` takes the postings of one source (from the fetch cache), asks the store which of
 them need work (``VacancyStore.classify``), and for those only runs
 
-    requirements (JM-48 / tags fallback) -> normalization (JM-20) -> embedding (JM-23)
+    requirements (JM-48 rules / tags fallback) -> normalization (JM-20) -> embedding (JM-23)
 
 then upserts the result. Everything else (unchanged, deferred, or failed this time) just has
 its ``last_seen_at`` moved forward, because it is still in the feed. So a
-rerun does nothing, a backfill never duplicates, and when the model, text or normalization
-versions change the affected rows are rebuilt once.
+rerun does nothing, a backfill never duplicates, and when the model, text, extraction or
+normalization versions change the affected rows are rebuilt once.
 
 Rules (decided here, adjustable constants):
 
@@ -112,12 +112,14 @@ class IngestSummary(BaseModel):
     aborted: bool = False
 
 
-def current_versions(normalizer: _Service, embedder: TextEmbedder | None) -> Versions:
+def current_versions(normalizer: _Service, embedder: TextEmbedder | None,
+                     extractor: RequirementExtractor | None = None) -> Versions:
     """What a vacancy processed now would be stamped with."""
     service = normalizer.versions
     return Versions(
         embedding=embedding_version(embedder), vacancy_text=VACANCY_TEXT_VERSION,
         taxonomy=service.taxonomy, index=service.index, matcher_prompt=service.matcher_prompt,
+        extraction=getattr(extractor, "version", None),
     )
 
 
@@ -150,6 +152,7 @@ def build_features(
             education_requirement=requirements.education, languages=requirements.languages,
             taxonomy_version=versions.taxonomy, index_version=versions.index,
             matcher_prompt_version=versions.matcher_prompt,
+            extraction_version=getattr(extractor, "version", None),
         )
     except Exception:
         raise StageError(NORMALIZATION_FAILED) from None
@@ -171,7 +174,7 @@ def ingest(
 ) -> IngestSummary:
     """Store the new, changed and stale postings of a fetch, and note the rest as seen."""
     name = source or (postings[0].source if postings else "")
-    plan = store.classify(postings, current_versions(normalizer, embedder))
+    plan = store.classify(postings, current_versions(normalizer, embedder, extractor))
     ordered = _newest_first(plan.to_process)
     todo, deferred = ordered[:limit], ordered[limit:]
 
@@ -247,9 +250,9 @@ def run_ingest(
     if unknown:
         raise ValueError(f"unknown source(s): {', '.join(unknown)}")
 
-    from jobpdf.ingestion.requirements import TagsExtractor
+    from jobpdf.ingestion.requirements import RulesExtractor
 
-    extractor = extractor or TagsExtractor()
+    extractor = extractor or RulesExtractor()
     owned = None
     results: list[dict[str, Any]] = []
     problems: list[str] = []

@@ -1,0 +1,1034 @@
+{
+ "candidates": {
+  "syn-c-001": {
+   "home_family": "data_engineering",
+   "lang": "en",
+   "skills": {
+    "Apache Kafka": "kafka",
+    "Docker": "docker",
+    "Google BigQuery": "bigquery",
+    "Python": "python",
+    "SQL": "sql",
+    "Terraform": "terraform",
+    "communication": null,
+    "dbt": "dbt",
+    "spark": "spark",
+    "teamwork": null
+   },
+   "trap": null
+  },
+  "syn-c-002": {
+   "home_family": "backend",
+   "lang": "en",
+   "skills": {
+    "Apache Kafka": "kafka",
+    "Cypress": "cypress",
+    "Django": "django",
+    "Docker": "docker",
+    "Go (programming language)": "go",
+    "MongoDB": "mongodb",
+    "PostgreSQL": "postgresql",
+    "RabbitMQ": "rabbitmq",
+    "React": "react",
+    "Redis": "redis",
+    "gRPC": "grpc",
+    "mentoring": null,
+    "node": "nodejs",
+    "problem solving": null
+   },
+   "trap": null
+  },
+  "syn-c-003": {
+   "home_family": "frontend",
+   "lang": "en",
+   "skills": {
+    "Angular": "angular",
+    "Figma": "figma",
+    "Git": "git",
+    "HTML": "html",
+    "Jira": "jira",
+    "OKR planning": null,
+    "REST API": "rest-api",
+    "React": "react",
+    "Redux": "redux",
+    "Tailwind": "tailwind",
+    "TypeScript": "typescript",
+    "Vue": "vue",
+    "teamwork": null,
+    "time management": null
+   },
+   "trap": null
+  },
+  "syn-c-004": {
+   "home_family": "ml",
+   "lang": "en",
+   "skills": {
+    "Apache Kafka": "kafka",
+    "Apache Spark": "spark",
+    "Docker": "docker",
+    "PyTorch": "pytorch",
+    "SQL": "sql",
+    "bigquery": "bigquery",
+    "communication": null,
+    "machine learning": "machine-learning",
+    "mentoring": null,
+    "nlp": "nlp",
+    "scikit-learn": "scikit-learn"
+   },
+   "trap": null
+  },
+  "syn-c-005": {
+   "home_family": "devops",
+   "lang": "en",
+   "skills": {
+    "Bash": "bash",
+    "Git": "git",
+    "Grafana": "grafana",
+    "GraphQL": "graphql",
+    "Jenkins": "jenkins",
+    "Kotlin": "kotlin",
+    "REST API": "rest-api",
+    "React Native": "react-native",
+    "Swift": "swift",
+    "internal tooling": null,
+    "teamwork": null,
+    "time management": null
+   },
+   "trap": "keyword_stuffer"
+  },
+  "syn-c-006": {
+   "home_family": "qa",
+   "lang": "en",
+   "skills": {
+    "Git": "git",
+    "GraphQL": "graphql",
+    "JavaScript": "javascript",
+    "Jenkins": "jenkins",
+    "Postman": "postman",
+    "Python": "python",
+    "React": "react",
+    "SQL": "sql",
+    "Selenium": "selenium",
+    "html5": "html",
+    "internal tooling": null,
+    "problem solving": null,
+    "teamwork": null
+   },
+   "trap": null
+  },
+  "syn-c-007": {
+   "home_family": "mobile",
+   "lang": "en",
+   "skills": {
+    "Apache Kafka": "kafka",
+    "Figma": "figma",
+    "Firebase": "firebase",
+    "Git": "git",
+    "GraphQL": "graphql",
+    "Kotlin": "kotlin",
+    "OKR planning": null,
+    "React": "react",
+    "Swift": "swift",
+    "TypeScript": "typescript",
+    "mentoring": null,
+    "time management": null
+   },
+   "trap": null
+  },
+  "syn-c-008": {
+   "home_family": "product",
+   "lang": "en",
+   "skills": {
+    "Angular": "angular",
+    "Figma": "figma",
+    "GraphQL": "graphql",
+    "Hypothesis testing": "hypothesis-testing",
+    "Market Research": "market-research",
+    "Notion": "notion",
+    "SQL": "sql",
+    "Wireframing": "wireframing",
+    "ga4": "google-analytics",
+    "internal tooling": null,
+    "mentoring": null,
+    "time management": null,
+    "ts": "typescript"
+   },
+   "trap": null
+  },
+  "syn-c-009": {
+   "home_family": "data_engineering",
+   "lang": "uk",
+   "skills": {
+    "Apache Kafka": "kafka",
+    "Apache Spark": "spark",
+    "Django": "django",
+    "Docker": "docker",
+    "Kanban boards": null,
+    "Python": "python",
+    "SQL": "sql",
+    "Terraform": "terraform",
+    "mentoring": null,
+    "ml": "machine-learning",
+    "postgres": "postgresql",
+    "teamwork": null
+   },
+   "trap": null
+  },
+  "syn-c-010": {
+   "home_family": "backend",
+   "lang": "uk",
+   "skills": {
+    "Django": "django",
+    "Docker": "docker",
+    "MongoDB": "mongodb",
+    "Python": "python",
+    "RabbitMQ": "rabbitmq",
+    "Redis": "redis",
+    "golang": "go",
+    "internal tooling": null,
+    "kafka": "kafka",
+    "mentoring": null,
+    "postgres": "postgresql",
+    "time management": null
+   },
+   "trap": "alias_only"
+  },
+  "syn-c-011": {
+   "home_family": "frontend",
+   "lang": "uk",
+   "skills": {
+    "Angular": "angular",
+    "Figma": "figma",
+    "GraphQL": "graphql",
+    "JavaScript": "javascript",
+    "React": "react",
+    "React Native": "react-native",
+    "Redux": "redux",
+    "SQL": "sql",
+    "Tailwind": "tailwind",
+    "communication": null,
+    "time management": null,
+    "ts": "typescript"
+   },
+   "trap": null
+  },
+  "syn-c-012": {
+   "home_family": "ml",
+   "lang": "en",
+   "skills": {
+    "Docker": "docker",
+    "Google BigQuery": "bigquery",
+    "PyTorch": "pytorch",
+    "Python": "python",
+    "SQL": "sql",
+    "communication": null,
+    "machine learning": "machine-learning",
+    "mentoring": null,
+    "nlp": "nlp",
+    "postgres": "postgresql",
+    "pyspark": "spark"
+   },
+   "trap": null
+  },
+  "syn-c-013": {
+   "home_family": "devops",
+   "lang": "en",
+   "skills": {
+    "Bash": "bash",
+    "Docker": "docker",
+    "Google Cloud Platform": "gcp",
+    "Jenkins": "jenkins",
+    "Linux": "linux",
+    "Microsoft Azure": "azure",
+    "RabbitMQ": "rabbitmq",
+    "Redis": "redis",
+    "Terraform": "terraform",
+    "communication": null,
+    "gRPC": "grpc",
+    "problem solving": null
+   },
+   "trap": null
+  },
+  "syn-c-014": {
+   "home_family": "qa",
+   "lang": "en",
+   "skills": {
+    "Cypress": "cypress",
+    "Git": "git",
+    "JavaScript": "javascript",
+    "Jenkins": "jenkins",
+    "Postman": "postman",
+    "REST API": "rest-api",
+    "RabbitMQ": "rabbitmq",
+    "Redis": "redis",
+    "SQL": "sql",
+    "gRPC": "grpc",
+    "internal tooling": null,
+    "problem solving": null,
+    "teamwork": null
+   },
+   "trap": null
+  },
+  "syn-c-015": {
+   "home_family": "mobile",
+   "lang": "en",
+   "skills": {
+    "Apache Kafka": "kafka",
+    "Docker": "docker",
+    "Firebase": "firebase",
+    "Git": "git",
+    "Kotlin": "kotlin",
+    "OKR planning": null,
+    "Python": "python",
+    "REST API": "rest-api",
+    "React Native": "react-native",
+    "Swift": "swift",
+    "problem solving": null,
+    "teamwork": null
+   },
+   "trap": "career_changer"
+  },
+  "syn-c-016": {
+   "home_family": "product",
+   "lang": "en",
+   "skills": {
+    "Amplitude": "amplitude",
+    "Figma": "figma",
+    "Hypothesis testing": "hypothesis-testing",
+    "Jira": "jira",
+    "Miro": "miro",
+    "Notion": "notion",
+    "SQL": "sql",
+    "TypeScript": "typescript",
+    "Vue": "vue",
+    "Wireframing": "wireframing",
+    "communication": null,
+    "html5": "html",
+    "problem solving": null
+   },
+   "trap": null
+  },
+  "syn-c-017": {
+   "home_family": "data_engineering",
+   "lang": "en",
+   "skills": {
+    "Apache Spark": "spark",
+    "Python": "python",
+    "SQL": "sql",
+    "Terraform": "terraform",
+    "airflow": "airflow",
+    "bigquery": "bigquery",
+    "communication": null,
+    "kafka": "kafka",
+    "mentoring": null,
+    "nlp": "nlp",
+    "postgres": "postgresql"
+   },
+   "trap": null
+  },
+  "syn-c-018": {
+   "home_family": "backend",
+   "lang": "en",
+   "skills": {
+    "Django": "django",
+    "Docker": "docker",
+    "Figma": "figma",
+    "Go (programming language)": "go",
+    "MongoDB": "mongodb",
+    "RabbitMQ": "rabbitmq",
+    "Redis": "redis",
+    "Vue": "vue",
+    "gRPC": "grpc",
+    "kafka": "kafka",
+    "mentoring": null,
+    "postgres": "postgresql",
+    "time management": null
+   },
+   "trap": null
+  },
+  "syn-c-019": {
+   "home_family": "frontend",
+   "lang": "en",
+   "skills": {
+    "Figma": "figma",
+    "GraphQL": "graphql",
+    "Hypothesis testing": "hypothesis-testing",
+    "OKR planning": null,
+    "RabbitMQ": "rabbitmq",
+    "React": "react",
+    "React Native": "react-native",
+    "Tailwind": "tailwind",
+    "Vue": "vue",
+    "html5": "html",
+    "js": "javascript",
+    "mentoring": null,
+    "time management": null
+   },
+   "trap": null
+  },
+  "syn-c-020": {
+   "home_family": "ml",
+   "lang": "en",
+   "skills": {
+    "Apache Spark": "spark",
+    "OKR planning": null,
+    "Terraform": "terraform",
+    "airflow": "airflow",
+    "communication": null,
+    "mentoring": null,
+    "pandas": "pandas"
+   },
+   "trap": "title_only"
+  }
+ },
+ "vacancies": {
+  "syn-v-001": {
+   "family": "data_engineering",
+   "preferred": [
+    "sql",
+    "rest-api",
+    "machine-learning",
+    "mongodb"
+   ],
+   "required": [
+    "docker",
+    "spark",
+    "airflow",
+    "terraform",
+    "kafka",
+    "dbt"
+   ]
+  },
+  "syn-v-002": {
+   "family": "backend",
+   "preferred": [
+    "kubernetes",
+    "rabbitmq",
+    "swift"
+   ],
+   "required": [
+    "rest-api",
+    "kafka",
+    "postgresql",
+    "python",
+    "django",
+    "mongodb"
+   ]
+  },
+  "syn-v-003": {
+   "family": "frontend",
+   "preferred": [
+    "firebase",
+    "react-native",
+    "redux"
+   ],
+   "required": [
+    "graphql",
+    "html",
+    "figma",
+    "typescript",
+    "react",
+    "tailwind",
+    "angular"
+   ]
+  },
+  "syn-v-004": {
+   "family": "ml",
+   "preferred": [
+    "bigquery",
+    "airflow"
+   ],
+   "required": [
+    "python",
+    "scikit-learn",
+    "pandas",
+    "nlp",
+    "docker",
+    "spark"
+   ]
+  },
+  "syn-v-005": {
+   "family": "devops",
+   "preferred": [
+    "azure",
+    "rabbitmq",
+    "mongodb"
+   ],
+   "required": [
+    "bash",
+    "gcp",
+    "jenkins",
+    "docker",
+    "kubernetes",
+    "grafana",
+    "terraform"
+   ]
+  },
+  "syn-v-006": {
+   "family": "qa",
+   "preferred": [
+    "rest-api",
+    "kafka"
+   ],
+   "required": [
+    "jenkins",
+    "javascript",
+    "python",
+    "git",
+    "postman",
+    "cypress",
+    "selenium"
+   ]
+  },
+  "syn-v-007": {
+   "family": "mobile",
+   "preferred": [
+    "grpc",
+    "go",
+    "kafka"
+   ],
+   "required": [
+    "react-native",
+    "graphql",
+    "firebase",
+    "rest-api",
+    "figma",
+    "swift"
+   ]
+  },
+  "syn-v-008": {
+   "family": "product",
+   "preferred": [
+    "html",
+    "amplitude",
+    "react"
+   ],
+   "required": [
+    "google-analytics",
+    "jira",
+    "notion",
+    "market-research",
+    "hypothesis-testing"
+   ]
+  },
+  "syn-v-009": {
+   "family": "data_engineering",
+   "preferred": [
+    "mongodb",
+    "spark",
+    "redis"
+   ],
+   "required": [
+    "kafka",
+    "docker",
+    "sql",
+    "terraform",
+    "postgresql",
+    "airflow"
+   ]
+  },
+  "syn-v-010": {
+   "family": "backend",
+   "preferred": [
+    "terraform",
+    "grafana"
+   ],
+   "required": [
+    "kafka",
+    "mongodb",
+    "django",
+    "docker",
+    "go",
+    "rabbitmq",
+    "nodejs"
+   ]
+  },
+  "syn-v-011": {
+   "family": "frontend",
+   "preferred": [
+    "rabbitmq",
+    "sql",
+    "git"
+   ],
+   "required": [
+    "react",
+    "vue",
+    "html",
+    "graphql",
+    "typescript"
+   ]
+  },
+  "syn-v-012": {
+   "family": "ml",
+   "preferred": [
+    "bigquery",
+    "kafka"
+   ],
+   "required": [
+    "spark",
+    "python",
+    "scikit-learn",
+    "docker",
+    "sql",
+    "pandas",
+    "pytorch"
+   ]
+  },
+  "syn-v-013": {
+   "family": "devops",
+   "preferred": [
+    "redis",
+    "grpc",
+    "django",
+    "go"
+   ],
+   "required": [
+    "jenkins",
+    "gcp",
+    "grafana",
+    "docker",
+    "kubernetes",
+    "terraform",
+    "linux",
+    "bash"
+   ]
+  },
+  "syn-v-014": {
+   "family": "qa",
+   "preferred": [
+    "rabbitmq",
+    "docker",
+    "selenium",
+    "angular"
+   ],
+   "required": [
+    "postman",
+    "git",
+    "python",
+    "cypress",
+    "javascript",
+    "sql",
+    "rest-api"
+   ]
+  },
+  "syn-v-015": {
+   "family": "mobile",
+   "preferred": [
+    "html",
+    "graphql",
+    "angular"
+   ],
+   "required": [
+    "rest-api",
+    "kotlin",
+    "git",
+    "swift",
+    "firebase",
+    "figma"
+   ]
+  },
+  "syn-v-016": {
+   "family": "product",
+   "preferred": [
+    "angular",
+    "tailwind",
+    "google-analytics",
+    "graphql"
+   ],
+   "required": [
+    "market-research",
+    "hypothesis-testing",
+    "wireframing",
+    "miro",
+    "amplitude",
+    "notion"
+   ]
+  },
+  "syn-v-017": {
+   "family": "data_engineering",
+   "preferred": [
+    "rabbitmq",
+    "machine-learning",
+    "bigquery",
+    "mongodb"
+   ],
+   "required": [
+    "kafka",
+    "airflow",
+    "sql",
+    "python",
+    "spark",
+    "terraform",
+    "docker"
+   ]
+  },
+  "syn-v-018": {
+   "family": "backend",
+   "preferred": [
+    "javascript",
+    "cypress"
+   ],
+   "required": [
+    "django",
+    "postgresql",
+    "go",
+    "rest-api",
+    "grpc",
+    "redis",
+    "rabbitmq",
+    "docker"
+   ]
+  },
+  "syn-v-019": {
+   "family": "frontend",
+   "preferred": [
+    "redux",
+    "jira",
+    "rabbitmq",
+    "notion"
+   ],
+   "required": [
+    "javascript",
+    "typescript",
+    "angular",
+    "html",
+    "figma",
+    "tailwind",
+    "graphql"
+   ]
+  },
+  "syn-v-020": {
+   "family": "ml",
+   "preferred": [
+    "postgresql",
+    "dbt",
+    "terraform",
+    "kafka"
+   ],
+   "required": [
+    "python",
+    "nlp",
+    "pytorch",
+    "machine-learning",
+    "spark",
+    "sql"
+   ]
+  },
+  "syn-v-021": {
+   "family": "devops",
+   "preferred": [
+    "jenkins",
+    "aws"
+   ],
+   "required": [
+    "azure",
+    "kubernetes",
+    "gcp",
+    "docker",
+    "bash"
+   ]
+  },
+  "syn-v-022": {
+   "family": "qa",
+   "preferred": [
+    "django",
+    "rabbitmq"
+   ],
+   "required": [
+    "sql",
+    "javascript",
+    "jenkins",
+    "cypress",
+    "git",
+    "python",
+    "selenium"
+   ]
+  },
+  "syn-v-023": {
+   "family": "mobile",
+   "preferred": [
+    "figma",
+    "grpc"
+   ],
+   "required": [
+    "kotlin",
+    "rest-api",
+    "graphql",
+    "git",
+    "swift"
+   ]
+  },
+  "syn-v-024": {
+   "family": "product",
+   "preferred": [
+    "graphql",
+    "javascript",
+    "jira"
+   ],
+   "required": [
+    "market-research",
+    "notion",
+    "hypothesis-testing",
+    "google-analytics",
+    "miro"
+   ]
+  },
+  "syn-v-025": {
+   "family": "data_engineering",
+   "preferred": [
+    "grpc",
+    "pandas",
+    "django"
+   ],
+   "required": [
+    "airflow",
+    "sql",
+    "docker",
+    "dbt",
+    "postgresql",
+    "python"
+   ]
+  },
+  "syn-v-026": {
+   "family": "backend",
+   "preferred": [
+    "figma",
+    "redux"
+   ],
+   "required": [
+    "grpc",
+    "python",
+    "rest-api",
+    "redis",
+    "docker",
+    "nodejs",
+    "rabbitmq",
+    "kafka"
+   ]
+  },
+  "syn-v-027": {
+   "family": "frontend",
+   "preferred": [
+    "react-native",
+    "hypothesis-testing",
+    "redis"
+   ],
+   "required": [
+    "html",
+    "vue",
+    "angular",
+    "javascript",
+    "graphql",
+    "tailwind",
+    "react",
+    "typescript"
+   ]
+  },
+  "syn-v-028": {
+   "family": "ml",
+   "preferred": [
+    "kafka",
+    "dbt"
+   ],
+   "required": [
+    "nlp",
+    "machine-learning",
+    "docker",
+    "pandas",
+    "pytorch",
+    "spark",
+    "python"
+   ]
+  },
+  "syn-v-029": {
+   "family": "devops",
+   "preferred": [
+    "kafka",
+    "redis",
+    "go"
+   ],
+   "required": [
+    "bash",
+    "jenkins",
+    "grafana",
+    "gcp",
+    "docker"
+   ]
+  },
+  "syn-v-030": {
+   "family": "qa",
+   "preferred": [
+    "mongodb",
+    "rabbitmq",
+    "react"
+   ],
+   "required": [
+    "selenium",
+    "rest-api",
+    "jenkins",
+    "cypress",
+    "python",
+    "git"
+   ]
+  },
+  "syn-v-031": {
+   "family": "mobile",
+   "preferred": [
+    "firebase",
+    "kafka",
+    "rabbitmq"
+   ],
+   "required": [
+    "git",
+    "rest-api",
+    "graphql",
+    "figma",
+    "react-native",
+    "swift"
+   ]
+  },
+  "syn-v-032": {
+   "family": "product",
+   "preferred": [
+    "notion",
+    "graphql"
+   ],
+   "required": [
+    "wireframing",
+    "figma",
+    "miro",
+    "amplitude",
+    "hypothesis-testing",
+    "sql"
+   ]
+  },
+  "syn-v-033": {
+   "family": "data_engineering",
+   "preferred": [
+    "go",
+    "machine-learning",
+    "nodejs",
+    "pytorch"
+   ],
+   "required": [
+    "sql",
+    "spark",
+    "kafka",
+    "docker",
+    "airflow",
+    "postgresql"
+   ]
+  },
+  "syn-v-034": {
+   "family": "backend",
+   "preferred": [
+    "rest-api",
+    "vue"
+   ],
+   "required": [
+    "docker",
+    "python",
+    "go",
+    "redis",
+    "rabbitmq",
+    "django",
+    "nodejs"
+   ]
+  },
+  "syn-v-035": {
+   "family": "frontend",
+   "preferred": [
+    "grpc",
+    "docker"
+   ],
+   "required": [
+    "typescript",
+    "graphql",
+    "vue",
+    "figma",
+    "react",
+    "html",
+    "javascript"
+   ]
+  },
+  "syn-v-036": {
+   "family": "ml",
+   "preferred": [
+    "kafka",
+    "spark"
+   ],
+   "required": [
+    "pytorch",
+    "docker",
+    "machine-learning",
+    "scikit-learn",
+    "python"
+   ]
+  },
+  "syn-v-037": {
+   "family": "devops",
+   "preferred": [
+    "python",
+    "jenkins",
+    "kafka",
+    "django"
+   ],
+   "required": [
+    "bash",
+    "grafana",
+    "docker",
+    "kubernetes",
+    "azure",
+    "gcp"
+   ]
+  },
+  "syn-v-038": {
+   "family": "qa",
+   "preferred": [
+    "typescript",
+    "html"
+   ],
+   "required": [
+    "git",
+    "cypress",
+    "jenkins",
+    "javascript",
+    "rest-api",
+    "postman",
+    "selenium"
+   ]
+  },
+  "syn-v-039": {
+   "family": "mobile",
+   "preferred": [
+    "firebase",
+    "nodejs",
+    "docker"
+   ],
+   "required": [
+    "react-native",
+    "graphql",
+    "kotlin",
+    "swift",
+    "git",
+    "rest-api"
+   ]
+  },
+  "syn-v-040": {
+   "family": "product",
+   "preferred": [
+    "tailwind",
+    "redux",
+    "figma",
+    "javascript"
+   ],
+   "required": [
+    "miro",
+    "market-research",
+    "sql",
+    "amplitude",
+    "jira"
+   ]
+  }
+ }
+}

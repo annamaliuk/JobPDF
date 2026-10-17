@@ -101,6 +101,7 @@ class VacancyFeatures(_ContractModel):
     min_years_experience: int | None = None
     education_requirement: EducationRequirement | None = None
     languages: list[str] | None = None  # None = not extracted; [] = none required
+    extraction_version: str | None = None  # which extractor read the posting (JM-48)
     # semantic similarity (JM-23)
     embedding: list[float] | None = None
     embedding_version: str | None = None

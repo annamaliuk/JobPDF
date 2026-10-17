@@ -6,8 +6,9 @@ need processing (extraction, normalization, embedding) and which do not:
 - ``new``        no row yet.
 - ``changed``    the row's ``content_hash`` differs: the posting's content changed.
 - ``stale``      content is the same, but the row was built with other versions of the
-                 embedding model, the vacancy text or the normalization than the current ones
-                 (the spec's "stale vectors are detected later").
+                 embedding model, the vacancy text, the requirement extraction (JM-48) or the
+                 normalization than the current ones (the spec's "stale vectors are detected
+                 later").
 - ``unchanged``  nothing to do except note that the posting was seen again.
 
 ``upsert`` is one ``INSERT ... ON CONFLICT DO UPDATE``, so a rerun, a backfill or two
@@ -62,6 +63,7 @@ class Versions:
     taxonomy: str | None = None
     index: str | None = None
     matcher_prompt: str | None = None
+    extraction: str | None = None
 
 
 @dataclass(frozen=True)
@@ -161,7 +163,7 @@ class VacancyStore:
         rows = self.conn.execute(
             """SELECT v.source, v.source_id, v.content_hash, v.embedding_version,
                       v.vacancy_text_version, v.taxonomy_version, v.index_version,
-                      v.matcher_prompt_version, v.fetched_at
+                      v.matcher_prompt_version, v.extraction_version, v.fetched_at
                FROM vacancies v
                JOIN unnest(%s::text[], %s::text[]) AS k(source, source_id)
                  ON v.source = k.source AND v.source_id = k.source_id""",
@@ -169,7 +171,7 @@ class VacancyStore:
         ).fetchall()
         self.conn.rollback()  # end the read transaction
         return {
-            (r[0], r[1]): StoredState(r[2], Versions(*r[3:8]), r[8]) for r in rows
+            (r[0], r[1]): StoredState(r[2], Versions(*r[3:9]), r[9]) for r in rows
         }
 
     def classify(self, postings: Iterable[SourcePosting], current: Versions) -> Plan:
@@ -205,12 +207,12 @@ class VacancyStore:
             """INSERT INTO vacancies AS v (
                    source, source_id, content_hash, features, embedding, embedding_version,
                    vacancy_text_version, taxonomy_version, index_version,
-                   matcher_prompt_version, url, posted_at, fetched_at, first_seen_at,
-                   last_seen_at)
+                   matcher_prompt_version, extraction_version, url, posted_at, fetched_at,
+                   first_seen_at, last_seen_at)
                VALUES (%(source)s, %(source_id)s, %(hash)s, %(features)s, %(embedding)s,
                        %(embedding_version)s, %(text_version)s, %(taxonomy)s, %(index)s,
-                       %(prompt)s, %(url)s, %(posted_at)s, %(fetched)s, %(fetched)s,
-                       %(fetched)s)
+                       %(prompt)s, %(extraction)s, %(url)s, %(posted_at)s, %(fetched)s,
+                       %(fetched)s, %(fetched)s)
                ON CONFLICT (source, source_id) DO UPDATE SET
                    content_hash = EXCLUDED.content_hash,
                    features = EXCLUDED.features,
@@ -220,6 +222,7 @@ class VacancyStore:
                    taxonomy_version = EXCLUDED.taxonomy_version,
                    index_version = EXCLUDED.index_version,
                    matcher_prompt_version = EXCLUDED.matcher_prompt_version,
+                   extraction_version = EXCLUDED.extraction_version,
                    url = EXCLUDED.url,
                    posted_at = EXCLUDED.posted_at,
                    fetched_at = EXCLUDED.fetched_at,
@@ -236,6 +239,7 @@ class VacancyStore:
                 "text_version": features.vacancy_text_version,
                 "taxonomy": features.taxonomy_version, "index": features.index_version,
                 "prompt": features.matcher_prompt_version,
+                "extraction": features.extraction_version,
                 "url": posting.url, "posted_at": posting.posted_at, "fetched": fetched_at,
             },
         ).fetchone()
