@@ -1,0 +1,14 @@
+# Keeps the build context small and keeps secrets and personal data out of every image.
+.git
+.venv
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+data
+jobpdf/temp/*
+tests
+*.patch

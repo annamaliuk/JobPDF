@@ -1,0 +1,18 @@
+# TLS reverse proxy in front of the app (JM-36). DOMAIN comes from .env; Caddy gets and renews
+# the certificate itself once the name points at this machine and ports 80 and 443 are open.
+# With the default "localhost" it serves a locally trusted certificate, for trying it out.
+{$DOMAIN:localhost} {
+	encode zstd gzip
+
+	# A CV is at most 5 MB (plus form overhead); the app enforces this too.
+	request_body {
+		max_size 6MB
+	}
+
+	reverse_proxy app:8000 {
+		# A cold analysis can take most of the 30 s target; give it room.
+		transport http {
+			response_header_timeout 90s
+		}
+	}
+}
