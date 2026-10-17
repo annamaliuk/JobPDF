@@ -15,7 +15,9 @@ x-database-url: &database-url
 
 x-jobpdf-env: &jobpdf-env
   <<: *database-url
-  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GEMINI_MODEL: ${GEMINI_MODEL:-}
   JOBPDF_SCORER: ${JOBPDF_SCORER:-linear}
   HF_HUB_OFFLINE: "1"
 

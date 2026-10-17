@@ -151,7 +151,9 @@ def make_conn() -> Iterator[Callable[[], psycopg.Connection]]:
     opened: list[psycopg.Connection] = []
 
     def make() -> psycopg.Connection:
-        conn = psycopg.connect(url, options=f"-c search_path={name}", connect_timeout=10)
+        # public stays on the path: once another test has created the pgvector extension
+        # there, CREATE EXTENSION IF NOT EXISTS is a no-op and its types live in public.
+        conn = psycopg.connect(url, options=f"-c search_path={name},public", connect_timeout=10)
         opened.append(conn)
         return conn
 

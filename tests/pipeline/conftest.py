@@ -1,17 +1,6 @@
 import pytest
 
-from jobpdf.extraction import llm
-
-
-@pytest.fixture(autouse=True)
-def no_live_llm(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No pipeline test may reach the Anthropic API or depend on a developer's key (JM-28)."""
-
-    def refuse(self, **kwargs) -> None:
-        raise AssertionError("AnthropicToolCaller.call() must never run in tests")
-
-    monkeypatch.setattr(llm.AnthropicToolCaller, "call", refuse)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+# tests/conftest.py keeps every pipeline test off the LLM and away from developer keys (JM-28).
 
 
 @pytest.fixture(autouse=True)

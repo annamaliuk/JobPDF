@@ -150,7 +150,7 @@ def test_the_proxy_is_the_only_public_entry(compose) -> None:
 def test_the_readme_describes_the_page_and_its_limits() -> None:
     section = README.split("### The web page")[1].split("\n---\n")[0]
 
-    for text in ("5 MB", "Anthropic", "`FORWARDED_ALLOW_IPS`", "no-store",
+    for text in ("5 MB", "Google Gemini", "`FORWARDED_ALLOW_IPS`", "no-store",
                  "5 uploads an hour and 20 a day"):
         assert text in section, text
     assert "`GET /`, `POST /report`" in README

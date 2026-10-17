@@ -68,7 +68,9 @@ KEY_MISSING = "key_missing"
 NO_API_KEYS = "no_api_keys"
 CHECK_FAILED = "check_failed"
 
-LLM_KEY_ENV = "ANTHROPIC_API_KEY"
+LLM_KEY_ENV = "GEMINI_API_KEY"
+# A local Ollama model needs no key (jobpdf.extraction.llm).
+KEYLESS_PROVIDERS = ("ollama",)
 
 
 class Check(BaseModel):
@@ -243,6 +245,8 @@ def _normalization(normalizer: _Normalizer) -> Check:
 def _llm(environ: Mapping[str, str]) -> Check:
     """Is the key there? ("set" or "missing", never the value.) Without it no CV can be
     extracted, so this is ``down`` rather than ``degraded``."""
+    if (environ.get("LLM_PROVIDER") or "").strip().lower() in KEYLESS_PROVIDERS:
+        return Check(status=OK, data={"key": "not needed"})
     if (environ.get(LLM_KEY_ENV) or "").strip():
         return Check(status=OK, data={"key": "set"})
     return Check(status=DOWN, code=KEY_MISSING, data={"key": "missing"})

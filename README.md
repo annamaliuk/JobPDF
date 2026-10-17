@@ -55,7 +55,7 @@ an API key, and start the app:
 
 ```bash
 uv run python scripts/make_api_key.py me            # prints the key once + the line for .env
-# paste the "me:…" line into JOBPDF_API_KEYS in .env, set JOBPDF_RATE_LIMIT_SECRET and ANTHROPIC_API_KEY
+# paste the "me:…" line into JOBPDF_API_KEYS in .env, set JOBPDF_RATE_LIMIT_SECRET and GEMINI_API_KEY
 
 uv run uvicorn jobpdf.api.app:create_app --factory --no-access-log
 curl localhost:8000/health
@@ -81,7 +81,7 @@ Docker Compose v2 is required.
 | Variable | What to put |
 |---|---|
 | `POSTGRES_PASSWORD` | a long random password (URL-safe characters only, it is used in a URL) |
-| `ANTHROPIC_API_KEY` | your Anthropic key |
+| `GEMINI_API_KEY` | your Gemini key (free, from Google AI Studio) |
 | `JOBPDF_RATE_LIMIT_SECRET` | 16+ random characters: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
 | `APP_UID` | `id -u` (so the containers can write to `./data`) |
 | `DOMAIN` | `localhost` to try it, your real name on a server |
@@ -272,7 +272,7 @@ table, notes on data quality and how the fit is scored. Close the page and it is
 - **One request, nothing stored.** The page is made by the server (`jobpdf/web/`, Jinja2
   templates, one stylesheet and one small script, no build step). It runs the same analysis as
   `/v1/analyze`: the same size cap, the same limit of 4 analyses at once, the same metrics. The
-  CV text goes to the language model service (Anthropic), and the page says so before upload.
+  CV text goes to the language model service (Google Gemini), and the page says so before upload.
 - **No key in the browser.** A key in a page's script is not a secret, so the page is limited
   per visitor address instead: 5 uploads an hour and 20 a day (the address is hashed with
   `JOBPDF_RATE_LIMIT_SECRET`, never stored). When the limit is reached the page says how long
@@ -299,8 +299,8 @@ table, notes on data quality and how the fit is scored. Close the page and it is
 | `app` never becomes healthy | `docker compose logs app` | `JOBPDF_RATE_LIMIT_SECRET` missing (the app refuses to start without it), or `db` not ready |
 | `/health` → `database` `unreachable` | `docker compose ps db` | database is down or `POSTGRES_PASSWORD` differs from the volume's |
 | `normalization` `index_unavailable` | | skill index not built: run `build_taxonomy.py` and `build_index.py` |
-| `normalization` `llm_tier_disabled` | | `ANTHROPIC_API_KEY` missing: matching still works for exact and vector hits only |
-| `llm` `key_missing` (status `down`) | `.env` | set `ANTHROPIC_API_KEY`, then `docker compose up -d app` |
+| `normalization` `llm_tier_disabled` | | `GEMINI_API_KEY` missing: matching still works for exact and vector hits only |
+| `llm` `key_missing` (status `down`) | `.env` | set `GEMINI_API_KEY`, then `docker compose up -d app` |
 | `vacancies` `no_vacancies` / `table_missing` | | run the ingestion once (see above) |
 | `vacancies` `stale_vacancies`, `fetch` `stale_fetch` / `no_cache` | Airflow UI, `data/cache/` | the DAGs stopped or a source key is wrong; run the scripts by hand to see the error code |
 | `fetch` `requests_24h` for Remotive near 4 | | Remotive allows 4 requests a day; the guard stops further requests by itself |
@@ -321,7 +321,8 @@ All in `.env` (template: `.env.example`). Keys are never printed or logged.
 |---|---|---|
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` | db | the database; `POSTGRES_PORT` is the loopback port on the host |
 | `DATABASE_URL` | scripts on the host | inside compose it is built from the values above |
-| `ANTHROPIC_API_KEY` | app, ingestion | CV reading, skill matching, requirement extraction |
+| `GEMINI_API_KEY` | app, ingestion | the LLM (Google Gemini): CV reading and skill matching |
+| `LLM_PROVIDER`, `GEMINI_MODEL` | app, ingestion | optional: `gemini` (default) or `ollama` for a local model; `GEMINI_MODEL` defaults to `gemini-2.5-flash` |
 | `JOBPDF_API_KEYS` | app | `name:sha256` entries, comma-separated (or `JOBPDF_API_KEYS_FILE`) |
 | `JOBPDF_RATE_LIMIT_SECRET` | app | hashes client addresses for the per-address limit (the web page); 16+ characters |
 | `FORWARDED_ALLOW_IPS` | app | which proxies uvicorn trusts for the visitor's address; set in `docker-compose.yml` (`*`, because the port is not published), not in `.env` |

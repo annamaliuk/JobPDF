@@ -5,7 +5,7 @@ description = "CV parsing, ESCO skill normalization and vacancy ranking"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "anthropic>=1.11.0",
+    "fastapi>=0.115",
     "google-genai>=2.31.0",
     "jinja2>=3.1",
     "numpy>=2.2.6",
@@ -14,13 +14,15 @@ dependencies = [
     "pydantic>=2",
     "pymupdf>=1.28.2",
     "python-docx>=1.2.0",
+    "python-multipart>=0.0.9",
     "rapidfuzz>=3.14.5",
     "sentence-transformers>=6.1.0",
     "torch>=2.14",
+    "uvicorn>=0.30",
 ]
 
 [dependency-groups]
-dev = ["pytest", "ruff"]
+dev = ["httpx", "pytest", "ruff"]
 
 [build-system]
 requires = ["hatchling"]

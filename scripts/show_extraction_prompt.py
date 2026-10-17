@@ -2,7 +2,7 @@
 
 Runs parse -> split_sections -> prompt building and prints the system prompt,
 the user message and the tool schema, e.g. to review the prompt or to try it
-by hand in claude.ai.
+by hand in Google AI Studio.
 
 Usage (from the repo root):
     uv run python scripts/show_extraction_prompt.py tests/extraction/fixtures/single_column.pdf
