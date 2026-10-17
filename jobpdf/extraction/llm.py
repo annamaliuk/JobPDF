@@ -19,7 +19,7 @@ from typing import Any, Protocol
 
 from jobpdf.extraction.prompt import PROMPT_VERSION
 
-DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-light"
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
 # Gemini's free tier answers 429 as soon as its per-minute quota is used up, so
 # its retries wait longer than the SDK default.
 GEMINI_RETRY_ATTEMPTS = 6
