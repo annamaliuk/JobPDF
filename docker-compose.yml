@@ -206,8 +206,9 @@ services:
       - airflow_home:/opt/airflow
     # Airflow keeps its own metadata in a second database on the same server. Creating it here
     # (instead of in an init script) also works on a Postgres volume that already exists.
-    entrypoint: ["/bin/bash", "-c"]
     command:
+      - bash
+      - -c
       - |
         for name in AIRFLOW__WEBSERVER__SECRET_KEY AIRFLOW_ADMIN_PASSWORD; do
           if [ -z "$${!name}" ]; then
