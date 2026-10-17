@@ -8,11 +8,11 @@ One Python package, `jobpdf`, runs as two processes that share one Postgres data
 
 | Process | What it does | Started by |
 |---|---|---|
-| **app** (FastAPI) | `POST /v1/analyze`, `GET /health`, `GET /metrics` | `uvicorn` / docker compose |
+| **app** (FastAPI) | the web page (`GET /`, `POST /report`), `POST /v1/analyze`, `GET /health`, `GET /metrics` | `uvicorn` / docker compose |
 | **ingestion** (Airflow DAGs) | fetch postings from the job sources, normalize, embed, store them | Airflow, or by hand with `scripts/` |
 
 ```
- job sources ──► Airflow ──► Postgres ◄── app ◄── CV upload (API key)
+ job sources ──► Airflow ──► Postgres ◄── app ◄── CV upload (web page, or API key)
  (Remotive, The Muse,        vacancies,         parse → extract → normalize → rank
   Arbeitnow, Adzuna,         skill index,
   Jooble)                    rate limits
@@ -261,6 +261,33 @@ Other endpoints:
 - `GET /metrics`: needs an API key. Counts of analyses, failures by `stage:code`, warnings,
   per-stage timings (p50, p95, max), token totals and refusals. In memory, reset on restart.
 
+### The web page
+
+Open the site's address in a browser (`https://<DOMAIN>/`, or `https://localhost/` locally).
+Choose a PDF or DOCX of at most 5 MB and press the button; the report appears on the next
+page: the figures from the CV, the best matches with "You have 7 of 9 required skills" and
+what is missing, the skills that were found and how abbreviations were read, every match in a
+table, notes on data quality and how the fit is scored. Close the page and it is gone.
+
+- **One request, nothing stored.** The page is made by the server (`jobpdf/web/`, Jinja2
+  templates, one stylesheet and one small script, no build step). It runs the same analysis as
+  `/v1/analyze`: the same size cap, the same limit of 4 analyses at once, the same metrics. The
+  CV text goes to the language model service (Anthropic), and the page says so before upload.
+- **No key in the browser.** A key in a page's script is not a secret, so the page is limited
+  per visitor address instead: 5 uploads an hour and 20 a day (the address is hashed with
+  `JOBPDF_RATE_LIMIT_SECRET`, never stored). When the limit is reached the page says how long
+  to wait. Several people behind one office address share it.
+- **The address must reach the app.** Compose sets `FORWARDED_ALLOW_IPS` so that the app reads
+  the visitor's address from the proxy's `X-Forwarded-For`. This is safe only while port 8000
+  is not published. If you put another proxy or a load balancer in front of Caddy, or publish
+  the app's port, review it; with a wrong value everybody counts as one address.
+- **Pages never leave a trace.** They are sent with `Cache-Control: no-store`, no referrer, a
+  Content-Security-Policy that forbids inline scripts and anything from other sites, and
+  `X-Frame-Options: DENY`. Text from a CV or a vacancy is escaped, and a vacancy's link is
+  shown only if it is an http(s) address.
+- The page is in English. It does not show a progress bar (the browser waits for the report),
+  and it is not part of the JSON API: `/docs` does not list it.
+
 ---
 
 ## 5. Operating it
@@ -279,6 +306,7 @@ Other endpoints:
 | `fetch` `requests_24h` for Remotive near 4 | | Remotive allows 4 requests a day; the guard stops further requests by itself |
 | matches are empty with warning `no_vacancies` | | the app cannot read vacancies; it keeps the last good copy and retries every 30 s |
 | uploads answer 503 `limiter_unavailable` | `/health` | Postgres is down; uploads resume when it is back |
+| the web page says "You have uploaded a lot of CVs" to everyone | `docker compose exec app env \| grep FORWARDED` | the app sees only the proxy's address: `FORWARDED_ALLOW_IPS` is missing or the app is not behind Caddy |
 
 The app reloads vacancies from the database every 5 minutes, so new postings appear without a
 restart.
@@ -295,7 +323,8 @@ All in `.env` (template: `.env.example`). Keys are never printed or logged.
 | `DATABASE_URL` | scripts on the host | inside compose it is built from the values above |
 | `ANTHROPIC_API_KEY` | app, ingestion | CV reading, skill matching, requirement extraction |
 | `JOBPDF_API_KEYS` | app | `name:sha256` entries, comma-separated (or `JOBPDF_API_KEYS_FILE`) |
-| `JOBPDF_RATE_LIMIT_SECRET` | app | hashes client addresses for the per-address limit; 16+ characters |
+| `JOBPDF_RATE_LIMIT_SECRET` | app | hashes client addresses for the per-address limit (the web page); 16+ characters |
+| `FORWARDED_ALLOW_IPS` | app | which proxies uvicorn trusts for the visitor's address; set in `docker-compose.yml` (`*`, because the port is not published), not in `.env` |
 | `JOBPDF_SCORER` | app | `linear` (default) or `learned` |
 | `THE_MUSE_API_KEY`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `JOOBLE_API_KEY` (+ optional query settings) | ingestion | a source without its key is skipped |
 | `APP_UID` | compose | the user the containers run as |
