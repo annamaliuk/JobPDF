@@ -84,6 +84,8 @@ SECTION_PHRASES: dict[str, list[str]] = {
     ],
 }
 _PRIORITY = [NICE_TO_HAVE, OTHER, RESPONSIBILITIES, REQUIREMENTS]  # ties go to the earlier
+_HEADING_KEYS = {" ".join(p.replace("ʼ", " ").split()) for phrases in SECTION_PHRASES.values()
+                 for p in phrases if len(p.split()) > 1 or len(p) > 6} - {"experience"}
 
 # A sentence holding one of these is about a preference, not a requirement.
 PREFERRED_CUES = [
@@ -101,9 +103,18 @@ _BOILERPLATE = re.compile(
     r"equal (?:employment )?opportunit|regardless of|discriminat|protected (?:veteran|by law)|"
     r"reasonable accommodation|affirmative action|e-?verify|benefits? (?:include|to support)|"
     r"paid time off|401\(?k|stock purchase|health insurance|how did you hear|"
-    r"application process|employee referral|privacy (?:policy|notice)",
+    r"application process|employee referral|privacy (?:policy|notice)|"
+    r"find more .{0,40}\bjobs\b",
     re.IGNORECASE,
 )
+# A sentence that states what the candidate needs: weak skills are trusted there too.
+_REQUIREMENT_CUE = re.compile(
+    r"\b(?:skills?|experience (?:with|in)|ability to|able to|proficien\w*|knowledge of|"
+    r"familiar\w*|you (?:have|bring|are|can)|must|required|strong|excellent|"
+    r"looking for|ideal for|who can)\b",
+    re.IGNORECASE,
+)
+_CLAUSE = re.compile(r"\s*[,;]\s*|\s+but\s+")
 
 # Real skills that are also everyday words: they need a capital and another skill nearby.
 AMBIGUOUS = {
@@ -121,7 +132,12 @@ GENERIC = {
     "technical skills", "soft skills", "lead", "plan", "design", "call", "source", "clean",
     "discipline", "schedule", "feedback", "reporting", "activity", "interaction", "craft",
     "history", "purchase", "rights", "brands", "fuel", "did", "scratch", "reserve",
+    "innovation", "innovate", "processor", "credibility", "judgment", "commitment",
+    "dedication", "loyalty", "confidence", "hybrid model", "remote",
 }
+# Source tags that describe the job, not a skill.
+TAG_STOP = {"remote", "hybrid", "onsite", "on site", "full time", "part time", "contract",
+            "freelance", "internship", "worldwide", "anywhere"}
 
 _PUNCT = re.compile(r"[^\w]+")
 _SENTENCE = re.compile(r"(?<=[.!?;])\s+")
@@ -157,11 +173,12 @@ class SectionLine:
 
 def split_sections(lines: Sequence[Line]) -> list[SectionLine]:
     """Each non-heading line with the section it sits in. A title-shaped line opens the
-    section it names; one that names none ends the current section and stays a line."""
+    section it names; one that names none ends the current section and stays a line. A
+    line that is exactly a heading phrase ("Responsibilities") is a heading too."""
     current = GENERAL
     out: list[SectionLine] = []
     for line in lines:
-        if line.is_heading:
+        if line.is_heading or phrase_key(line.text) in _HEADING_KEYS:
             current = classify_heading(line.text)
             continue
         if line.is_title:
@@ -182,8 +199,22 @@ def is_boilerplate(sentence: str) -> bool:
     return bool(_BOILERPLATE.search(sentence))
 
 
+def has_requirement_cue(sentence: str) -> bool:
+    return bool(_REQUIREMENT_CUE.search(sentence))
+
+
+def clauses(sentence: str) -> list[str]:
+    return [c for c in _CLAUSE.split(sentence) if c.strip()]
+
+
+_ABBREVIATIONS = re.compile(r"\b(e\.g|i\.e|etc|incl|approx|vs)\.", re.IGNORECASE)
+_KEEP = "\u2024"  # one-dot leader: stands in for an abbreviation's dot while splitting
+
+
 def sentences(text: str) -> list[str]:
-    return [s for s in _SENTENCE.split(text) if s.strip()]
+    """Split after . ! ? ; but not after "e.g." or "etc."."""
+    guarded = _ABBREVIATIONS.sub(lambda m: m.group(1) + _KEEP, text)
+    return [s.replace(_KEEP, ".") for s in _SENTENCE.split(guarded) if s.strip()]
 
 
 # --- skills -------------------------------------------------------------------------
@@ -412,12 +443,20 @@ _PROFICIENCY = re.compile(
 
 
 def languages_in(sentence: str) -> list[str]:
-    """Languages a sentence asks for. Latin-script names must be capitalised, so "polish
-    the UI" is not Polish."""
-    if not _PROFICIENCY.search(sentence):
+    """Languages a sentence requires: clauses that only state a preference ("German would
+    be a big plus") are left out. Latin-script names must be capitalised, so "polish the
+    UI" is not Polish."""
+    if not _PROFICIENCY.search(sentence) or is_boilerplate(sentence):
         return []
-    return [name for name, pattern in _LANGUAGE_RES.items()
-            if any(_language_word(m.group(0)) for m in pattern.finditer(sentence))]
+    found: list[str] = []
+    for clause in clauses(sentence):
+        if has_preferred_cue(clause):
+            continue
+        for name, pattern in _LANGUAGE_RES.items():
+            if name not in found and any(_language_word(m.group(0))
+                                         for m in pattern.finditer(clause)):
+                found.append(name)
+    return found
 
 
 def is_language_name(text: str) -> bool:

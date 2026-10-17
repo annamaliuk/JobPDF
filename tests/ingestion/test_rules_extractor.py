@@ -65,8 +65,9 @@ def test_an_unusable_description_falls_back_to_tags() -> None:
 
 def test_few_skills_in_the_text_are_topped_up_with_tags() -> None:
     text = "<h3>Requirements</h3><p>You know Python.</p>" + "<p>We value people.</p>" * 15
-    result = extract(text, tags=["python", "Airflow"])
-    assert result.required_skills == ["Python", "Airflow"]
+    result = extract(text, tags=["python", "Docker", "Remote", "Airflow"])
+    assert result.required_skills == ["Python", "Docker"]  # only tags the taxonomy knows
+    assert result.quotes["Docker"] == "(source tag)"
     assert TAGS_ADDED in result.warnings
 
 
@@ -193,3 +194,26 @@ def test_boilerplate_sentences_set_nothing() -> None:
     result = RulesExtractor(vocabulary=REAL_VOCAB).extract(posting(1, description=text))
     assert result.min_years_experience is None
     assert "pregnancy" not in result.required_skills
+
+
+def test_a_language_clause_with_a_cue_is_left_out_but_the_rest_counts() -> None:
+    text = ("<h3>Requirements</h3><ul><li>You are fluent in Portuguese and English, German "
+            "would be a big plus.</li></ul><p>Find more English Speaking Jobs in Germany on "
+            "Arbeitnow</p>" + "<p>We value people.</p>" * 10)
+    assert extract(text).languages == ["English", "Portuguese"]
+
+
+def test_weak_skills_in_a_sentence_stating_a_need_count_outside_requirements() -> None:
+    text = ("<p>This role is ideal for someone with strong communication skills.</p>"
+            "<h3>Responsibilities</h3><ul><li>Help customers succeed</li></ul>"
+            + "<p>We value people.</p>" * 10)
+    result = RulesExtractor(vocabulary=REAL_VOCAB).extract(posting(1, description=text))
+    assert result.required_skills[:1] == ["communication"]
+    assert "Help customers" not in result.required_skills
+
+
+def test_a_bare_heading_phrase_line_is_a_heading() -> None:
+    placed = __import__("jobpdf.ingestion.requirement_rules", fromlist=["x"]).split_sections(
+        [__import__("jobpdf.ingestion.posting_text", fromlist=["x"]).Line(t, is_bullet=True)
+         for t in ("Responsibilities", "Ship features")])
+    assert [(p.line.text, p.section) for p in placed] == [("Ship features", "responsibilities")]
