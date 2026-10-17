@@ -18,7 +18,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from jobpdf.extraction import prompt as prompt_module
-from jobpdf.extraction.llm import AnthropicToolCaller, ToolCaller, ToolCallResult
+from jobpdf.extraction.llm import ToolCaller, ToolCallResult, default_caller
 from jobpdf.extraction.models import ParsedDocument, Section
 from jobpdf.extraction.postprocess import build_profile
 from jobpdf.extraction.schema import (
@@ -61,10 +61,10 @@ def extract_profile(
 ) -> ExtractionResult:
     """Extract a validated CandidateProfile from a parsed, sectioned CV.
 
-    ``caller=None`` means the real Anthropic API, which raises MissingAPIKeyError
-    without ANTHROPIC_API_KEY. Tests pass a FakeToolCaller or ReplayToolCaller.
+    ``caller=None`` means the real API of LLM_PROVIDER (Anthropic by default), which
+    raises MissingAPIKeyError without its key. Tests pass a FakeToolCaller or ReplayToolCaller.
     """
-    caller = caller if caller is not None else AnthropicToolCaller()
+    caller = caller if caller is not None else default_caller()
     system = prompt_module.SYSTEM_PROMPT
     user = prompt_module.build_user_message(doc, sections)
     tool = tool_schema()
