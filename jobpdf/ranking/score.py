@@ -32,12 +32,13 @@ from jobpdf.ranking.semantic import (
 
 log = logging.getLogger(__name__)
 
-# Weights and thresholds are provisional; JM-26 tunes them on JM-25's dataset.
+# JM-26 (scripts/eval_ranking.py, perfect mode on JM-25's pairs) found no held-out gain
+# from other weights or thresholds, so these stay; the real-normalization run is pending.
 W_SKILL = 0.7
 W_SEMANTIC = 0.3
 STRONG_COVERAGE = 0.8  # share of required skills for "strong"
 PARTIAL_COVERAGE = 0.5  # share of required skills for "partial"
-SEM_MIN = 0.3  # on JM-23's calibrated 0..1 scale; provisional, JM-26 tunes it
+SEM_MIN = 0.3  # on JM-23's calibrated 0..1 scale
 
 # Warning codes on a FitResult.
 SEMANTIC_MISSING = "semantic_missing"
@@ -135,30 +136,38 @@ def fit_warnings(components: FitComponents, fit: float | None) -> list[str]:
 
 
 def assign_band(
-    overlap: SkillOverlap, semantic: float | None, cap: Band | None = None
+    overlap: SkillOverlap,
+    semantic: float | None,
+    cap: Band | None = None,
+    *,
+    strong_coverage: float = STRONG_COVERAGE,
+    partial_coverage: float = PARTIAL_COVERAGE,
+    sem_min: float = SEM_MIN,
 ) -> tuple[Band, Band]:
     """(band, band_before_cap). Public so "what if you learned X" (JM-42) uses the
     exact same rule as the ranked cards.
 
     ``semantic`` is the calibrated semantic score (FitComponents.semantic). A
     missing semantic score never blocks "strong"; a vacancy without listed skills
-    is at most "partial", because its requirements can't be confirmed.
+    is at most "partial", because its requirements can't be confirmed. The
+    threshold arguments exist for JM-26's threshold search; production uses the
+    module constants.
     """
     basis = overlap.required_coverage
     if basis is None:
         basis = overlap.score  # only nice-to-have skills listed
-    semantic_ok = semantic is None or semantic >= SEM_MIN
+    semantic_ok = semantic is None or semantic >= sem_min
     if basis is not None:
-        if basis >= STRONG_COVERAGE and semantic_ok:
+        if basis >= strong_coverage and semantic_ok:
             band = Band.STRONG
-        elif basis >= PARTIAL_COVERAGE:
+        elif basis >= partial_coverage:
             band = Band.PARTIAL
         else:
             band = Band.WEAK
     elif semantic is None:
         band = Band.UNSCORED
     else:
-        band = Band.PARTIAL if semantic >= SEM_MIN else Band.WEAK
+        band = Band.PARTIAL if semantic >= sem_min else Band.WEAK
     if cap is not None and BAND_ORDER[cap] > BAND_ORDER[band]:
         return cap, band
     return band, band
