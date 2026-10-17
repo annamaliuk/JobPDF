@@ -88,7 +88,7 @@ class TheMuse:
             location_raw=", ".join(locations) or None, remote=remote,
             posted_at=parse_time(item.get("publication_date")),
             description=text_or_none(item.get("contents")),
-            tags=[*names(item.get("levels")), *names(item.get("tags"))],
+            tags=names(item.get("tags")),  # "levels" (Mid Level...) are not skills
             category=(names(item.get("categories")) or [None])[0],
             employment_type=text_or_none(item.get("type")),
         )
