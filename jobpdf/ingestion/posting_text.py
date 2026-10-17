@@ -35,6 +35,9 @@ class Line:
     text: str
     is_heading: bool = False
     is_bullet: bool = False
+    # Shaped like a title ("Your Future at Kyndryl") but not marked as a heading: it may
+    # open a section, or just be a short item such as "Ruby on Rails".
+    is_title: bool = False
 
 
 class _Collector(HTMLParser):
@@ -94,8 +97,18 @@ def _short(text: str) -> bool:
     return len(text) <= MAX_HEADING_CHARS and len(text.split()) <= MAX_HEADING_WORDS
 
 
+_SMALL_WORDS = 3  # "at", "of", "the" may stay lowercase in a title
+
+
 def _looks_like_heading(text: str) -> bool:
     return text.endswith(":") and _short(text)
+
+
+def _looks_like_title(text: str) -> bool:
+    """3 to 6 words, capitalised except small ones, no sentence punctuation."""
+    words = text.split()
+    return (3 <= len(words) <= 6 and not text.endswith((".", "!", "?", ",", ";", ")"))
+            and all(w[:1].isupper() for w in words if len(w) > _SMALL_WORDS))
 
 
 def posting_lines(description: str | None) -> list[Line]:
@@ -120,7 +133,8 @@ def posting_lines(description: str | None) -> list[Line]:
         if not text:
             continue
         heading = (line.is_heading or _looks_like_heading(text)) and not bullet
-        lines.append(Line(text, is_heading=heading, is_bullet=bullet))
+        title = not (heading or bullet) and _looks_like_title(text)
+        lines.append(Line(text, is_heading=heading, is_bullet=bullet, is_title=title))
     return lines
 
 

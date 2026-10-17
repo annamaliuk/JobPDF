@@ -184,3 +184,24 @@ def test_responsibilities_are_the_bullets_of_their_section_cut_to_length() -> No
 def test_without_bullets_the_section_lines_are_used() -> None:
     placed = rules.split_sections([Line("Your role", is_heading=True), Line("Own the API.")])
     assert rules.responsibilities_of(placed) == ["Own the API."]
+
+
+def test_non_digital_esco_aliases_load_as_weak(tmp_path) -> None:
+    (tmp_path / "aliases.csv").write_text(
+        "canonical_id,alias,alias_norm,lang,alias_kind,exact_only\n"
+        "e:1,Python,python,en,preferred,false\n"
+        "e:2,innovation,innovation,en,preferred,false\n"
+        "e:3,teamwork,teamwork,en,custom,false\n", encoding="utf-8")
+    (tmp_path / "concepts.csv").write_text(
+        "canonical_id,name_en,name_uk,description,skill_type,reuse_level,is_digital,source\n"
+        "e:1,Python,,,,,true,esco\ne:2,innovation,,,,,false,esco\n"
+        "e:3,teamwork,,,,,false,esco\n", encoding="utf-8")
+    vocab = SkillVocabulary.load(tmp_path)
+    assert vocab.weak == {"innovation"}  # a custom alias is trusted like a digital skill
+    assert [(h.text, h.strong) for h in vocab.scan("Python, innovation and teamwork")] == [
+        ("Python", True), ("innovation", False), ("teamwork", True)]
+
+
+def test_huge_plus_is_a_preference_but_five_plus_years_is_not() -> None:
+    assert rules.has_preferred_cue("Tableau is a huge plus")
+    assert not rules.has_preferred_cue("5 plus years of SQL")
