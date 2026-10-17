@@ -5,8 +5,9 @@
 -- reads it (VacancyFeatures as JSON, the embedding beside it) and what is needed to decide
 -- later whether it must be processed again:
 --   content_hash       fingerprint of the posting's content (see jobpdf/ingestion/store.py)
---   *_version          what produced the embedding and the skill IDs; a mismatch with the
---                      current versions marks the row stale
+--   *_version          what produced the embedding, the requirements (extraction_version,
+--                      JM-48) and the skill IDs; a mismatch with the current versions marks
+--                      the row stale
 --   fetched_at         when the SOURCE data was fetched (not when it was written); an older
 --                      fetch never overwrites a newer one
 --   first_seen_at / last_seen_at   from fetch times too; a stale cache cannot make a posting
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS vacancies (
     taxonomy_version       text,
     index_version          text,
     matcher_prompt_version text,
+    extraction_version     text,
     url                    text        NOT NULL,
     posted_at              timestamptz,
     fetched_at             timestamptz NOT NULL,
@@ -33,4 +35,6 @@ CREATE TABLE IF NOT EXISTS vacancies (
     updated_at             timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (source, source_id)
 );
+-- JM-48: tables created before the column existed get it here.
+ALTER TABLE vacancies ADD COLUMN IF NOT EXISTS extraction_version text;
 CREATE INDEX IF NOT EXISTS vacancies_last_seen_idx ON vacancies (last_seen_at DESC);
