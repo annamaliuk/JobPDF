@@ -3,6 +3,7 @@
 #   docker compose up -d --build                  db, migrations, then app + proxy
 #   docker compose --profile airflow up -d        also the Airflow scheduler and web UI
 #   docker compose run --rm tools python scripts/<script>.py     one-off scripts
+#   docker compose --profile monitor up -d monitor   alerts (README, section 8)
 #   docker compose run --rm migrate python scripts/migrate.py --status   what is applied
 #
 # The README has the full first-time setup. Everything reads its settings from .env; the
@@ -125,6 +126,33 @@ services:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+
+  # JM-40: checks /health and /metrics every minute and posts to a webhook (profile "monitor").
+  #   docker compose --profile monitor up -d monitor
+  # It starts after the app but does not wait for it to be healthy: it is there for when the
+  # app is not. It cannot see the proxy or the machine going down; see the README, section 8.
+  monitor:
+    profiles: [monitor]
+    build: *app-build
+    image: jobpdf-app
+    restart: unless-stopped
+    user: *user
+    depends_on: [app]
+    environment:
+      MONITOR_URL: http://app:8000
+      JOBPDF_MONITOR_API_KEY: ${JOBPDF_MONITOR_API_KEY:-}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_LABEL: ${ALERT_LABEL:-JobPDF}
+      MONITOR_IGNORE: ${MONITOR_IGNORE:-}
+    volumes:
+      - ./data:/app/data
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: []
+    command: ["python", "scripts/uptime_check.py", "--loop",
+              "--state", "data/monitor_state.json"]
 
   # One-off scripts: docker compose run --rm tools python scripts/build_index.py
   tools:
