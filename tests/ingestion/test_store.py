@@ -22,7 +22,7 @@ from jobpdf.ranking.models import SkillRef, VacancyFeatures
 
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 V = Versions(embedding="e5@1|query: ", vacancy_text="1", taxonomy="v1.2.1", index="idx1",
-             matcher_prompt="p1")
+             matcher_prompt="p1", extraction="rules-1")
 
 
 def posting(i: int = 1, **changes) -> SourcePosting:
@@ -50,6 +50,7 @@ def features(p: SourcePosting, *, versions: Versions = V, vector=(0.5, -0.25, 0.
         embedding=list(vector), embedding_version=versions.embedding,
         vacancy_text_version=versions.vacancy_text, taxonomy_version=versions.taxonomy,
         index_version=versions.index, matcher_prompt_version=versions.matcher_prompt,
+        extraction_version=versions.extraction,
     )
 
 
@@ -445,7 +446,7 @@ def test_the_schema_file_is_the_one_the_store_applies() -> None:
 @pytest.mark.db
 def test_reprocessing_a_stale_row_updates_every_version_stamp(store) -> None:
     p = posting(1)
-    old = Versions("old-e", "old-t", "old-x", "old-i", "old-p")
+    old = Versions("old-e", "old-t", "old-x", "old-i", "old-p", "old-r")
     store.upsert(p, features(p, versions=old), T0)
     assert [x.source_id for x in store.classify([p], V).stale] == ["1"]
 
@@ -454,8 +455,8 @@ def test_reprocessing_a_stale_row_updates_every_version_stamp(store) -> None:
     assert [x.source_id for x in store.classify([p], V).unchanged] == ["1"]
     (loaded,) = store.load()
     assert (loaded.embedding_version, loaded.vacancy_text_version, loaded.taxonomy_version,
-            loaded.index_version, loaded.matcher_prompt_version) == (
-        V.embedding, V.vacancy_text, V.taxonomy, V.index, V.matcher_prompt)
+            loaded.index_version, loaded.matcher_prompt_version, loaded.extraction_version) == (
+        V.embedding, V.vacancy_text, V.taxonomy, V.index, V.matcher_prompt, V.extraction)
 
 
 @pytest.mark.db
@@ -511,3 +512,28 @@ def test_seen_since_includes_the_boundary(store) -> None:
 
     assert [v.id for v in store.load(seen_since=T0)] == ["1"]
     assert store.load(seen_since=T0 + timedelta(seconds=1)) == []
+
+
+@pytest.mark.db
+def test_rows_built_by_another_extractor_are_stale_once(store) -> None:
+    p = posting(1)
+    store.upsert(p, features(p, versions=Versions(**{**V.__dict__, "extraction": "tags"})), T0)
+    assert [x.source_id for x in store.classify([p], V).stale] == ["1"]
+
+    store.upsert(p, features(p), T0 + timedelta(hours=8))
+
+    assert [x.source_id for x in store.classify([p], V).unchanged] == ["1"]
+
+
+@pytest.mark.db
+def test_a_table_from_before_jm48_gets_the_extraction_column(conn) -> None:
+    conn.execute("DROP TABLE IF EXISTS vacancies")
+    conn.execute(store_module.SCHEMA_FILE.read_text(encoding="utf-8")
+                 .replace("    extraction_version     text,\n", "")
+                 .replace("ALTER TABLE vacancies ADD COLUMN IF NOT EXISTS extraction_version text;",
+                          ""))
+    conn.commit()
+    store_module.apply_schema(conn)
+    columns = {r[0] for r in conn.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'vacancies'")}
+    assert "extraction_version" in columns
