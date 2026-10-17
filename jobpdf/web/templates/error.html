@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}JobPDF: that did not work{% endblock %}
+{% block head %}  <meta name="robots" content="noindex">{% endblock %}
+{% block main %}
+<section class="intro">
+  <h1>That did not work</h1>
+  <p class="lead" role="alert">{{ detail }}</p>
+  <p><a class="button" href="/">Try another file</a></p>
+  <p class="code">Error code: {{ code }}</p>
+</section>
+{% endblock %}

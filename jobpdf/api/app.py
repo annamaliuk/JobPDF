@@ -238,6 +238,9 @@ def create_app(services: Services | None = None) -> FastAPI:
         body = build_response(result, page=page, page_size=page_size)
         return JSONResponse(body.model_dump(mode="json"), headers=NO_STORE)
 
+    from jobpdf.web import register_web  # here, not at the top: the web module imports this one
+
+    register_web(app)
     return app
 
 

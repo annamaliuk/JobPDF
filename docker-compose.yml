@@ -15,7 +15,9 @@ x-database-url: &database-url
 
 x-jobpdf-env: &jobpdf-env
   <<: *database-url
-  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GEMINI_MODEL: ${GEMINI_MODEL:-}
   JOBPDF_SCORER: ${JOBPDF_SCORER:-linear}
   HF_HUB_OFFLINE: "1"
 
@@ -94,6 +96,11 @@ services:
       <<: *jobpdf-env
       JOBPDF_API_KEYS: ${JOBPDF_API_KEYS:-}
       JOBPDF_RATE_LIMIT_SECRET: ${JOBPDF_RATE_LIMIT_SECRET:-}
+      # JM-43: the web page limits uploads per visitor address, which uvicorn takes from the
+      # proxy's X-Forwarded-For header. "*" is safe only because port 8000 is not published
+      # (`expose`, not `ports`): the proxy is the only thing that can reach the app, and Caddy
+      # replaces any X-Forwarded-For a visitor sends. Publish the port and this must change.
+      FORWARDED_ALLOW_IPS: "*"
     volumes:
       - ./data:/app/data
     # CVs are written here while they are parsed and deleted straight after; in memory only.

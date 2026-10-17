@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Your CV report{% endblock %}
+{% block head %}  <meta name="robots" content="noindex">{% endblock %}
+{% macro job_row(job) %}
+<li class="job">
+  <div class="rank" aria-label="Rank {{ job.rank }}">{{ job.rank }}</div>
+  <div class="body">
+    <h3 class="title">
+      {% if job.url %}<a href="{{ job.url }}" rel="noopener noreferrer nofollow" target="_blank">{{ job.title }}</a>{% else %}{{ job.title }}{% endif %}
+    </h3>
+    <p class="who">
+      {% if job.company %}{{ job.company }}{% else %}Company not listed{% endif %}{% if job.location %}, {{ job.location }}{% endif %}.
+      Found on {{ job.source }}.{% if job.posted %} {{ job.posted }}.{% endif %}
+    </p>
+    <p class="meter-line">
+      {% if job.segments %}<span class="meter" aria-hidden="true">{% for on in job.segments %}<i class="{{ 'on' if on else 'off' }}"></i>{% endfor %}</span>{% endif %}
+      <span class="band {{ job.band }}">{{ job.band_label }}</span>
+      {% if job.fit %}<span class="fit">{{ job.fit }} fit</span>{% endif %}
+    </p>
+    <p>{{ job.coverage }}</p>
+    {% if job.missing %}<p class="missing">{{ job.missing }}</p>{% endif %}
+    {% if job.nice_to_have %}<p class="quiet">{{ job.nice_to_have }}</p>{% endif %}
+    {% if job.lowered %}<p class="quiet">{{ job.lowered }}</p>{% endif %}
+  </div>
+</li>
+{% endmacro %}
+{% block main %}
+<section class="intro">
+  <h1>Your CV report</h1>
+  {% if report.summary %}<p class="lead">{{ report.summary }}</p>{% endif %}
+  <dl class="figures">
+    {% for figure in report.figures %}
+    <div><dt>{{ figure.label }}</dt><dd>{{ figure.value }}</dd></div>
+    {% endfor %}
+  </dl>
+</section>
+
+{% if report.empty %}
+<section><p class="lead">{{ report.empty }}</p></section>
+{% else %}
+<section aria-labelledby="best-heading">
+  <h2 id="best-heading">Best matches</h2>
+  <ol class="jobs">
+    {% for job in report.best %}{{ job_row(job) }}{% endfor %}
+  </ol>
+</section>
+{% endif %}
+
+{% if report.reach %}
+<section aria-labelledby="reach-heading">
+  <h2 id="reach-heading">Within reach</h2>
+  <p>Jobs that are one or two skills away from a strong match.</p>
+  <ul class="plain">
+    {% for line in report.reach %}<li>{{ line }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if report.learn %}
+<section aria-labelledby="learn-heading">
+  <h2 id="learn-heading">Skills worth learning</h2>
+  <ul class="plain">
+    {% for line in report.learn %}<li>{{ line }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section aria-labelledby="skills-heading">
+  <h2 id="skills-heading">Your skills</h2>
+  {% if report.skills %}
+  <ul class="chips">
+    {% for skill in report.skills %}<li>{{ skill.label }}{% if skill.unsure %} <span class="quiet">(not sure)</span>{% endif %}</li>{% endfor %}
+  </ul>
+  {% else %}
+  <p>No skills were recognised in your CV.</p>
+  {% endif %}
+  {% if report.readings %}
+  <h3>How we read your wording</h3>
+  <ul class="plain">
+    {% for line in report.readings %}<li>{{ line }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if report.unrecognised %}
+  <h3>Not recognised</h3>
+  <p>These were not used for matching: {{ report.unrecognised | join(", ") }}.</p>
+  {% endif %}
+</section>
+
+{% if report.rest %}
+<section aria-labelledby="all-heading">
+  <h2 id="all-heading">All matches</h2>
+  <div class="table-wrap" tabindex="0" role="region" aria-labelledby="all-heading">
+    <table>
+      <thead>
+        <tr><th scope="col">Rank</th><th scope="col">Job</th><th scope="col">Match</th><th scope="col">Fit</th><th scope="col">Required skills</th></tr>
+      </thead>
+      <tbody>
+        {% for job in report.rest %}
+        <tr>
+          <td>{{ job.rank }}</td>
+          <td>{% if job.url %}<a href="{{ job.url }}" rel="noopener noreferrer nofollow" target="_blank">{{ job.title }}</a>{% else %}{{ job.title }}{% endif %}{% if job.company %}<br><span class="quiet">{{ job.company }}</span>{% endif %}</td>
+          <td><span class="band {{ job.band }}">{{ job.band_label }}</span></td>
+          <td>{{ job.fit if job.fit else "n/a" }}</td>
+          <td>{{ job.required_short }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if report.notes %}
+<section aria-labelledby="notes-heading">
+  <h2 id="notes-heading">Notes on this result</h2>
+  <ul class="plain notes">
+    {% for line in report.notes %}<li>{{ line }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section aria-labelledby="scoring-heading">
+  <h2 id="scoring-heading">How the fit is scored</h2>
+  {% for line in report.scoring %}<p>{{ line }}</p>{% endfor %}
+</section>
+
+<p class="again"><a class="button" href="/">Check another CV</a></p>
+{% endblock %}

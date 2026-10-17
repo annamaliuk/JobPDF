@@ -95,7 +95,7 @@ jobs:
         run: |
           pip install "apache-airflow==2.10.5" \
             --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.12.txt"
-          pip install pytest "pydantic>=2" "psycopg[binary]" numpy pgvector rapidfuzz anthropic \
+          pip install pytest "pydantic>=2" "psycopg[binary]" numpy pgvector rapidfuzz google-genai \
             huggingface_hub python-docx pymupdf
 
       - name: DAG tests

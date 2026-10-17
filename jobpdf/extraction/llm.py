@@ -1,7 +1,7 @@
 """LLM access behind one small interface (JM-11).
 
-Every LLM call in the project goes through ``ToolCaller``: Anthropic, Gemini and
-Ollama (real; ``LLM_PROVIDER`` picks one, see ``default_caller``), Fake (scripted, for
+Every LLM call in the project goes through ``ToolCaller``: Gemini and Ollama
+(real; ``LLM_PROVIDER`` picks one, see ``default_caller``), Fake (scripted, for
 tests), Replay (recorded responses), Recording (wraps a real caller to produce
 replay fixtures) and ReplayOrRecord (the offline-first mix the evaluation
 scripts use). Tests never touch the network.
@@ -19,10 +19,7 @@ from typing import Any, Protocol
 
 from jobpdf.extraction.prompt import PROMPT_VERSION
 
-DEFAULT_MODEL = "claude-sonnet-4-6"
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
-# The SDK itself retries connection errors, 408, 409, 429 and 5xx with backoff.
-MAX_RETRIES = 3
 # Gemini's free tier answers 429 as soon as its per-minute quota is used up, so
 # its retries wait longer than the SDK default.
 GEMINI_RETRY_ATTEMPTS = 6
@@ -37,7 +34,7 @@ DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_OLLAMA_NUM_CTX = 16384
 # A local model on a laptop CPU can take minutes for one long answer.
 OLLAMA_TIMEOUT_S = 3600
-PROVIDERS = ("anthropic", "gemini", "ollama")
+PROVIDERS = ("gemini", "ollama")
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
@@ -73,55 +70,6 @@ class ToolCaller(Protocol):
     def call(self, *, system: str, user: str, tool: dict, max_tokens: int) -> ToolCallResult: ...
 
 
-class AnthropicToolCaller:
-    """Forced tool use via the Anthropic SDK.
-
-    Note: forced ``tool_choice`` and ``temperature`` work on claude-sonnet-4-6 (the
-    default); newer models such as claude-opus-5-5 / claude-sonnet-5-5 reject them
-    with HTTP 400, so an ANTHROPIC_MODEL override to those needs a code change.
-    """
-
-    def __init__(self, model: str | None = None, api_key: str | None = None) -> None:
-        key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-        if not key:
-            raise MissingAPIKeyError(
-                "ANTHROPIC_API_KEY is not set, so structured extraction cannot call the LLM. "
-                "API keys arrive with JM-35: put ANTHROPIC_API_KEY=... into your local .env "
-                "(see .env.example) or the environment. Offline, use FakeToolCaller or "
-                "ReplayToolCaller."
-            )
-        import anthropic  # deferred: importing this module must stay cheap and offline
-
-        self.model = model or os.environ.get("ANTHROPIC_MODEL") or DEFAULT_MODEL
-        self._client = anthropic.Anthropic(api_key=key, max_retries=MAX_RETRIES)
-
-    def call(self, *, system: str, user: str, tool: dict, max_tokens: int) -> ToolCallResult:
-        response = self._client.messages.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            system=system,
-            temperature=0,
-            tools=[tool],
-            tool_choice={"type": "tool", "name": tool["name"]},
-            messages=[{"role": "user", "content": user}],
-        )
-        block = next((b for b in response.content if b.type == "tool_use"), None)
-        # A truncated answer (max_tokens) may lack the block or carry partial input;
-        # return it so the caller can retry with a larger budget.
-        if block is None and response.stop_reason != "max_tokens":
-            raise LLMResponseError(
-                f"Expected a {tool['name']!r} tool call, got none "
-                f"(stop_reason={response.stop_reason!r})"
-            )
-        return ToolCallResult(
-            tool_input=dict(block.input) if block is not None else {},
-            stop_reason=response.stop_reason or "",
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-            model=response.model,
-        )
-
-
 class GeminiToolCaller:
     """Forced function calling via the Google Gen AI SDK (Gemini API).
 
@@ -135,11 +83,12 @@ class GeminiToolCaller:
         key = api_key or os.environ.get("GEMINI_API_KEY")
         if not key:
             raise MissingAPIKeyError(
-                "GEMINI_API_KEY is not set, so LLM_PROVIDER=gemini cannot call the LLM. "
-                "Create a key in Google AI Studio and put GEMINI_API_KEY=... into your "
-                "local .env or the environment."
+                "GEMINI_API_KEY is not set, so the LLM cannot be called. Create a key in "
+                "Google AI Studio and put GEMINI_API_KEY=... into your local .env or the "
+                "environment (see .env.example). Offline, use FakeToolCaller or "
+                "ReplayToolCaller; LLM_PROVIDER=ollama runs a local model without a key."
             )
-        from google import genai  # deferred like anthropic above
+        from google import genai  # deferred: importing this module must stay cheap and offline
         from google.genai import types
 
         self._types = types
@@ -194,7 +143,7 @@ class GeminiToolCaller:
         call = next(
             (c for c in response.function_calls or [] if c.name == tool["name"]), None
         )
-        # Mapped to the Anthropic spelling, which the extractor's retry checks for.
+        # Mapped to the spelling the extractor's retry checks for.
         stop_reason = "max_tokens" if finish == "MAX_TOKENS" else (finish or "").lower()
         if call is None and stop_reason != "max_tokens":
             raise LLMResponseError(
@@ -255,7 +204,7 @@ class OllamaToolCaller:
                 "num_ctx": self.num_ctx,
             },
         })
-        # Mapped to the Anthropic spelling, which the extractor's retry checks for.
+        # Mapped to the spelling the extractor's retry checks for.
         done = response.get("done_reason") or ""
         stop_reason = "max_tokens" if done == "length" else done
         content = (response.get("message") or {}).get("content") or ""
@@ -300,8 +249,8 @@ class OllamaToolCaller:
 
 
 def provider() -> str:
-    """The provider named by LLM_PROVIDER (default "anthropic")."""
-    name = (os.environ.get("LLM_PROVIDER") or "anthropic").strip().lower()
+    """The provider named by LLM_PROVIDER (default "gemini")."""
+    name = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
     if name not in PROVIDERS:
         raise ValueError(f"LLM_PROVIDER must be one of {PROVIDERS}, got {name!r}")
     return name
@@ -309,24 +258,18 @@ def provider() -> str:
 
 def default_caller(model: str | None = None) -> ToolCaller:
     """The real caller for LLM_PROVIDER; raises MissingAPIKeyError without its key."""
-    if provider() == "gemini":
-        return GeminiToolCaller(model=model)
     if provider() == "ollama":
         return OllamaToolCaller(model=model)
-    return AnthropicToolCaller(model=model)
+    return GeminiToolCaller(model=model)
 
 
 def api_errors() -> tuple[type[Exception], ...]:
     """The SDK errors that mean a live call failed, for the chosen provider."""
     if provider() == "ollama":
         return (OllamaError,)
-    if provider() == "gemini":
-        from google.genai import errors
+    from google.genai import errors
 
-        return (errors.APIError,)
-    import anthropic
-
-    return (anthropic.APIError,)
+    return (errors.APIError,)
 
 
 def load_env_file(env_file: Path = ENV_FILE) -> list[str]:
@@ -395,8 +338,8 @@ class ReplayToolCaller:
             where = str(self.fixtures_dir)
             raise ReplayMissError(
                 f"No recorded response {key}.json in {where}. Record it in the live step: "
-                f"RecordingToolCaller(AnthropicToolCaller(), {where!r}) "
-                "(needs ANTHROPIC_API_KEY, JM-35)."
+                f"RecordingToolCaller(GeminiToolCaller(), {where!r}) "
+                "(needs GEMINI_API_KEY)."
             )
         return ToolCallResult(**json.loads(path.read_text(encoding="utf-8")))
 
