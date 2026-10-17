@@ -40,11 +40,10 @@ from jobpdf.extraction.llm import (
     AnthropicToolCaller,
     LLMResponseError,
     MissingAPIKeyError,
-    RecordingToolCaller,
     ReplayMissError,
+    ReplayOrRecord,
     ReplayToolCaller,
     ToolCaller,
-    ToolCallResult,
 )
 from jobpdf.extraction.plaintext import from_plain_text
 from jobpdf.extraction.prompt import PROMPT_VERSION
@@ -54,29 +53,6 @@ DEFAULT_DATASET = Path("data/external/dataturks/Entity Recognition in Resumes.js
 DEFAULT_RECORDINGS = Path("data/eval/extraction/recordings")
 DEFAULT_OUT = Path("data/eval/extraction/report.json")
 FIELDS = [*TEXT_FIELDS, "graduation_year"]
-
-
-class ReplayOrRecord:
-    """Serve a recorded response if there is one, else ask ``live`` and record it.
-
-    A recorded truncated answer (stop_reason "max_tokens") counts as a miss, so
-    the extractor's bigger-budget retry really reaches the API and overwrites it.
-    """
-
-    def __init__(self, live: ToolCaller, recordings: Path) -> None:
-        self._replay = ReplayToolCaller(recordings)
-        self._record = RecordingToolCaller(live, recordings)
-        self.model = live.model
-
-    def call(self, *, system: str, user: str, tool: dict, max_tokens: int) -> ToolCallResult:
-        kwargs = {"system": system, "user": user, "tool": tool, "max_tokens": max_tokens}
-        try:
-            recorded = self._replay.call(**kwargs)
-        except ReplayMissError:
-            return self._record.call(**kwargs)
-        if recorded.stop_reason == "max_tokens":
-            return self._record.call(**kwargs)
-        return recorded
 
 
 def main(argv: list[str] | None = None) -> int:

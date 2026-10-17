@@ -1,9 +1,10 @@
+import csv
 from pathlib import Path
 
 import pytest
 
 from jobpdf.normalization.custom import CustomSkillsError, load_custom, merge_custom
-from jobpdf.normalization.taxonomy import load_esco
+from jobpdf.normalization.taxonomy import Concept, load_esco
 
 ESCO = Path(__file__).parent / "fixtures" / "esco"
 URI = "http://example.org/esco/skill/"
@@ -105,3 +106,26 @@ def test_missing_columns(tmp_path: Path, esco: tuple) -> None:
 
     with pytest.raises(CustomSkillsError, match="missing columns"):
         load_custom(path, {c.canonical_id: c for c in concepts})
+
+
+def test_shipped_file_has_no_conflicts() -> None:
+    """The committed custom_skills.csv loads without the ESCO export. ESCO concepts are
+    stubbed with the name the file gives them, so ESCO labels are only checked by
+    scripts/build_taxonomy.py; name clashes and aliases shared by two concepts fail here."""
+    path = Path(__file__).parents[2] / "data" / "taxonomy" / "custom_skills.csv"
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    names: dict[str, str] = {}
+    for row in rows:
+        cid, name = row["canonical_id"], row["canonical_name"].strip()
+        if not cid.startswith("jobpdf:") and not names.get(cid):
+            names[cid] = name
+    stubs = {
+        cid: Concept(canonical_id=cid, name_en=name or cid, name_uk=None, description=None,
+                     skill_type=None, reuse_level=None, is_digital=True, source="esco")
+        for cid, name in names.items()
+    }
+
+    concepts, aliases = load_custom(path, stubs)
+
+    assert concepts and aliases

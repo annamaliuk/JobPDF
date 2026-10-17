@@ -113,6 +113,7 @@ def test_vacancy_with_only_required_fields_has_correct_defaults() -> None:
         "min_years_experience": None, "education_requirement": None, "languages": None,
         "embedding": None, "embedding_version": None, "vacancy_text_version": None,
         "taxonomy_version": None, "index_version": None, "matcher_prompt_version": None,
+        "extraction_version": None,
     }
 
 
