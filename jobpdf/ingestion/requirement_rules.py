@@ -178,6 +178,12 @@ def _contains(haystack: str, phrase: str) -> bool:
     return f" {phrase} " in f" {haystack} "
 
 
+# A heading naming both kinds ("Required and Preferred Qualifications") opens a requirements
+# section: its lines are required unless they say otherwise ("… is a plus").
+_REQUIRED_WORDS = {"required", "must", "minimum", "basic", "erforderlich",
+                   "обов язково", "необхідні"}
+
+
 def classify_heading(text: str) -> str:
     """The section a heading opens; GENERAL when no phrase matches."""
     key = phrase_key(text)
@@ -186,6 +192,8 @@ def classify_heading(text: str) -> str:
         for phrase in SECTION_PHRASES[section]:
             if len(phrase) > best_len and _contains(key, phrase_key(phrase)):
                 best, best_len = section, len(phrase)
+    if best == NICE_TO_HAVE and any(_contains(key, w) for w in _REQUIRED_WORDS):
+        return REQUIREMENTS
     return best
 
 

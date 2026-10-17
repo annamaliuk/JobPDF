@@ -36,6 +36,9 @@ def names(hits) -> list[str]:
     ("Буде плюсом:", rules.NICE_TO_HAVE),
     ("Обов'язки", rules.RESPONSIBILITIES),
     ("Our story", rules.GENERAL),
+    ("Required and Preferred Qualifications", rules.REQUIREMENTS),
+    ("Must have / nice to have", rules.REQUIREMENTS),
+    ("Preferred qualifications", rules.NICE_TO_HAVE),
 ])
 def test_headings_are_sorted_into_sections(heading: str, section: str) -> None:
     assert rules.classify_heading(heading) == section
