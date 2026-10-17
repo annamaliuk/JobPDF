@@ -66,7 +66,7 @@ def test_the_upload_page_has_a_form_that_posts_a_file_to_the_report(client) -> N
 def test_the_upload_page_tells_people_where_their_cv_goes(client) -> None:
     html = client.get("/").text
 
-    assert "sent to a language model service (Anthropic)" in html
+    assert "sent to a language model service (Google Gemini)" in html
     assert "Nothing" in html and "not stored" in html
 
 

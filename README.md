@@ -272,7 +272,7 @@ table, notes on data quality and how the fit is scored. Close the page and it is
 - **One request, nothing stored.** The page is made by the server (`jobpdf/web/`, Jinja2
   templates, one stylesheet and one small script, no build step). It runs the same analysis as
   `/v1/analyze`: the same size cap, the same limit of 4 analyses at once, the same metrics. The
-  CV text goes to the language model service (Anthropic), and the page says so before upload.
+  CV text goes to the language model service (Google Gemini), and the page says so before upload.
 - **No key in the browser.** A key in a page's script is not a secret, so the page is limited
   per visitor address instead: 5 uploads an hour and 20 a day (the address is hashed with
   `JOBPDF_RATE_LIMIT_SECRET`, never stored). When the limit is reached the page says how long
