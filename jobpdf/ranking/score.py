@@ -234,7 +234,7 @@ def rank_vacancies(
     hidden: list[FitResult] = []
     for vacancy, semantic in zip(vacancies, semantics, strict=True):
         adjustment = adjustments.get(vacancy.id, VacancyAdjustment())
-        result = _fit_result(candidate_skills, vacancy, semantic, adjustment, scorer)
+        result = score_vacancy(candidate_skills, vacancy, semantic, adjustment, scorer)
         (hidden if adjustment.hidden else visible).append(result)
     visible.sort(key=_sort_key)
     hidden.sort(key=_sort_key)
@@ -260,13 +260,16 @@ def rank_vacancies(
     )
 
 
-def _fit_result(
+def score_vacancy(
     candidate_skills: CandidateSkills,
     vacancy: VacancyFeatures,
     semantic: SemanticScore | None,
     adjustment: VacancyAdjustment,
     scorer: Scorer,
 ) -> FitResult:
+    """Score and band one vacancy. Public so "what if you learned X" (JM-42) re-scores
+    with exactly the code the ranked cards use: pass the same ``semantic`` to keep the
+    experience part fixed while the candidate's skills change."""
     overlap = skill_overlap(candidate_skills, vacancy)
     components = FitComponents(
         skill=overlap.score,
