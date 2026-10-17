@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}JobPDF{% endblock %}</title>
+  {% block head %}{% endblock %}
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site">
+    <a class="brand" href="/">JobPDF</a>
+  </header>
+  <main id="main">
+{% block main %}{% endblock %}
+  </main>
+  <footer class="site">
+    <p>Your CV is read once to build this page and is not kept.</p>
+  </footer>
+</body>
+</html>
