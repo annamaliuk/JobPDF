@@ -3,8 +3,9 @@
 Every PDF or DOCX in --input is parsed, sectioned and extracted as in the
 pipeline, then a second LLM call judges the extraction against the same masked
 CV. Calibration runs alongside: each CV also gets copies of its extraction with
-one planted mistake each, and with --dataturks the judge also runs on labeled
-resumes so its verdicts can be compared with the labels.
+planted mistakes (packed so most CVs need one or two extra judge calls, not
+four), and with --dataturks the judge also runs on labeled resumes so its
+verdicts can be compared with the labels.
 
 The report holds counts and rates only: no CV text, quotes, names or judge
 reasons. Per-CV verdicts with reasons, for the human spot check, go to
@@ -13,14 +14,15 @@ reasons. Per-CV verdicts with reasons, for the human spot check, go to
 Replay mode (default) is offline and serves responses recorded by an earlier
 live run, skipping CVs without one. Live mode calls the API of LLM_PROVIDER
 ("anthropic", the default, needs ANTHROPIC_API_KEY; "gemini" needs
-GEMINI_API_KEY) and records every response, so a re-run never pays twice.
-Keys and LLM_PROVIDER may sit in the repo's gitignored .env. JUDGE_MODEL picks
-the judge's model; extraction keeps ANTHROPIC_MODEL or GEMINI_MODEL.
+GEMINI_API_KEY; "ollama" needs no key and runs a local model) and records every
+response, so a re-run never pays twice. Keys and LLM_PROVIDER may sit in the
+repo's gitignored .env. JUDGE_MODEL picks the judge's model; extraction keeps
+ANTHROPIC_MODEL, GEMINI_MODEL or OLLAMA_MODEL.
 
 Usage (from the repo root):
     uv run python scripts/judge_extraction.py
     uv run python scripts/judge_extraction.py --mode live --limit 3
-    LLM_PROVIDER=gemini JUDGE_MODEL=gemini-2.5-pro \\
+    LLM_PROVIDER=gemini JUDGE_MODEL=gemini-2.5-flash \\
         uv run python scripts/judge_extraction.py --mode live
     uv run python scripts/judge_extraction.py --mode live \\
         --dataturks "data/external/dataturks/Entity Recognition in Resumes.json"
@@ -54,7 +56,7 @@ from jobpdf.extraction.judge_calibration import (
     agreement_report,
     caught,
     label_agreement,
-    plant_error,
+    plant_copies,
     plant_report,
 )
 from jobpdf.extraction.llm import (
@@ -88,8 +90,8 @@ _SKIPPABLE = (ReplayMissError, ExtractionError, JudgeError, LLMResponseError)
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     load_env_file(args.env_file)
-    key_name = KEY_NAMES[provider()]
-    if args.mode == "live" and not os.environ.get(key_name):
+    key_name = KEY_NAMES.get(provider())  # None: a local provider needs no key
+    if args.mode == "live" and key_name and not os.environ.get(key_name):
         _error(f"--mode live needs {key_name} in the environment or .env; nothing was sent.")
         return 2
     if not args.input.is_dir():
@@ -179,17 +181,15 @@ def _judge_file(path, args, extractor, judge, outcomes, skipped, models) -> CVJu
     _write_verdicts(args.verdicts, path.name, cv)
 
     if not args.no_plants and not baseline.text_unreadable:
-        for kind in PLANT_KINDS:
-            plant = plant_error(extraction.profile, kind, masked_text, baseline)
-            if plant is None:
-                outcomes.append((kind, None))
-                continue
+        copies, unfair = plant_copies(extraction.profile, masked_text, baseline)
+        outcomes.extend((kind, None) for kind in unfair)
+        for plants in copies:  # one judge call per copy, however many plants it holds
             try:
-                result = judge_profile(doc, sections, plant.profile, judge)
+                result = judge_profile(doc, sections, plants[0].profile, judge)
             except _SKIPPABLE as exc:
-                skipped[f"plant_{_skip_reason(exc)}"] += 1
+                skipped[f"plant_{_skip_reason(exc)}"] += len(plants)
                 continue
-            outcomes.append((kind, caught(plant, result, baseline)))
+            outcomes.extend((p.kind, caught(p, result, baseline)) for p in plants)
     return cv
 
 

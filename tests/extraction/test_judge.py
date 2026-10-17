@@ -33,6 +33,7 @@ from jobpdf.extraction.judge_calibration import (
     agreement_report,
     caught,
     label_agreement,
+    plant_copies,
     plant_error,
     plant_report,
 )
@@ -324,8 +325,69 @@ def test_caught_rules() -> None:
     assert not caught(fake, result_of([]), baseline)  # no verdict is no catch
 
     dropped = plant_error(profile, "drop_job", CV_TEXT, baseline)
-    assert caught(dropped, result_of([], missed=["experience"]), baseline)
+    assert caught(dropped, missed_jobs("Data Engineer, Acme Widgets LLC"), baseline)
+    assert caught(dropped, missed_jobs("Acme Widgets LLC, 2021-2024"), baseline)
+    assert not caught(dropped, missed_jobs("Junior Analyst"), baseline)  # another job
     assert not caught(dropped, result_of([], missed=["skills"]), baseline)
+
+
+def missed_jobs(*quotes: str) -> JudgeResult:
+    result = result_of([])
+    result.missed = [MissedItem(field="experience", quote=q) for q in quotes]
+    return result
+
+
+def three_job_profile() -> CandidateProfile:
+    profile = make_profile()
+    profile.experience.append(job("Intern", "Initrode Labs", "2018", "Intern"))
+    return profile
+
+
+def test_plant_copies_pack_one_mistake_per_job_into_one_copy() -> None:
+    profile = three_job_profile()
+    copies, unfair = plant_copies(profile, CV_TEXT, baseline_all_supported(profile))
+
+    assert unfair == [] and len(copies) == 1
+    plants = {p.kind: p for p in copies[0]}
+    assert set(plants) == {"fake_skill", "drop_job", "shift_start", "fake_company"}
+    copy = plants["drop_job"].profile
+    assert all(p.profile is copy for p in plants.values())  # one judge call
+    assert plants["drop_job"].dropped.title == "Data Engineer"
+    # Job 0 is dropped, so jobs 1 and 2 move up to 0 and 1.
+    assert [j.title for j in copy.experience] == ["Junior Analyst", "Intern"]
+    assert plants["shift_start"].path == "experience[0]" and copy.experience[0].start == "2017"
+    assert plants["fake_company"].path == "experience[1]"
+    assert copy.experience[1].company == "Northwind Traders"
+    assert plants["fake_skill"].path == "skills[3]"
+    assert len(profile.experience) == 3 and profile.experience[0].start == "2021"  # untouched
+
+
+def test_plant_copies_spill_over_when_jobs_run_out() -> None:
+    profile = make_profile()  # two jobs for three job plants
+    copies, unfair = plant_copies(profile, CV_TEXT, baseline_all_supported(profile))
+
+    assert unfair == []
+    assert [[p.kind for p in c] for c in copies] == [
+        ["fake_skill", "drop_job", "shift_start"], ["fake_company"]]
+    assert copies[1][0].path == "experience[0]"
+
+
+def test_plant_copies_report_kinds_without_a_fair_target() -> None:
+    profile = make_profile()
+    baseline = result_of([("skills[0]", "supported"), ("experience[0]", "unsupported"),
+                          ("experience[1]", "partly_wrong")])
+    copies, unfair = plant_copies(profile, CV_TEXT, baseline)
+    assert unfair == ["drop_job", "shift_start", "fake_company"]
+    assert [[p.kind for p in c] for c in copies] == [["fake_skill"]]
+
+
+def test_drop_job_ignores_a_missed_job_that_only_shares_the_title() -> None:
+    profile = make_profile()
+    profile.experience[1] = job("Data Engineer", "Globex Testing Co", "2019", "Data Engineer")
+    baseline = baseline_all_supported(profile)
+    dropped = plant_error(profile, "drop_job", CV_TEXT, baseline)
+    assert not caught(dropped, missed_jobs("Data Engineer"), baseline)
+    assert caught(dropped, missed_jobs("Data Engineer\nAcme Widgets LLC"), baseline)
 
 
 def test_plant_report() -> None:
