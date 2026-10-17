@@ -33,7 +33,7 @@ def test_scripts_and_styles_are_dropped() -> None:
 def test_plain_text_bullets_and_colon_headings_are_recognised() -> None:
     text = "About the job\nRequirements:\n- 3+ years Python\n• SQL\n2) Docker\n\n"
     assert posting_lines(text) == [
-        Line("About the job"),
+        Line("About the job", is_title=True),
         Line("Requirements:", is_heading=True),
         Line("3+ years Python", is_bullet=True),
         Line("SQL", is_bullet=True),
@@ -60,3 +60,9 @@ def test_very_long_descriptions_are_cut_before_parsing() -> None:
 def test_short_text_is_not_usable() -> None:
     assert not is_usable(posting_lines("Python developer wanted."))
     assert is_usable(posting_lines("x" * 200))
+
+
+def test_title_shaped_lines_are_marked_but_not_headings() -> None:
+    lines = posting_lines("Your Future at Kyndryl\nTailwind CSS\nWe hire people.")
+    assert [(line.is_heading, line.is_title) for line in lines] == [
+        (False, True), (False, False), (False, False)]

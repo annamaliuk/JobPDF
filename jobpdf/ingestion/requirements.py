@@ -24,7 +24,7 @@ from jobpdf.ingestion.sources.models import SourcePosting
 from jobpdf.ranking.models import EducationRequirement
 
 TAGS_VERSION = "tags"
-RULES_VERSION = "rules-1"  # bump when a rule or word list changes
+RULES_VERSION = "rules-2"  # bump when a rule or word list changes
 
 # Warning codes.
 TAGS_FALLBACK = "tags_fallback"
@@ -33,6 +33,8 @@ TAGS_ADDED = "tags_added"  # the description named few skills, so the tags were 
 PARTIAL_VOCABULARY = "partial_vocabulary"  # no taxonomy build: custom skills only
 FEW_SKILLS = 3  # fewer skills than this found in the text: the tags are added
 MAX_SKILLS = 25
+_REQUIRING = {rules.REQUIREMENTS, rules.NICE_TO_HAVE}
+_SECTIONED = {rules.REQUIREMENTS, rules.NICE_TO_HAVE, rules.RESPONSIBILITIES}
 MAX_TAG_SKILLS = 25
 MAX_TAG_CHARS = 60  # longer than this is a sentence, not a skill
 
@@ -83,11 +85,13 @@ class RulesExtractor:
     """Requirements read from the description by rules (JM-48); tags when it is unusable.
 
     Skills are found by the taxonomy vocabulary, loaded once (``SkillVocabulary.load``).
-    A skill is nice-to-have when it sits in a nice-to-have section or in a sentence with a
-    cue such as "is a plus"; anything named in both lists stays required. Years, education
-    and languages are read from requirement and general lines only; lines that only state a
-    preference never set them. When the text names fewer than ``FEW_SKILLS`` skills, the
-    source's tags are added as required skills (``tags_added``).
+    Weak (non-digital ESCO) matches count only in requirement and nice-to-have sections, or
+    anywhere when the posting has no sections at all. A skill is nice-to-have when it sits
+    in a nice-to-have section or in a sentence with a cue such as "is a plus"; anything
+    named in both lists stays required. Years, education and languages are read from
+    requirement and general lines only; lines that only state a preference, and boilerplate
+    (equal opportunity, benefits), never set them. When the text names fewer than
+    ``FEW_SKILLS`` skills, the source's tags are added as required skills (``tags_added``).
     """
 
     version = RULES_VERSION
@@ -116,12 +120,14 @@ class RulesExtractor:
         years: list[int] = []
         education: EducationRequirement | None = None
         languages: list[str] = []
+        structured = any(p.section in _SECTIONED for p in placed)
         for item in placed:
             if item.section == rules.OTHER:
                 continue
             nice = item.section == rules.NICE_TO_HAVE
+            trust_weak = item.section in _REQUIRING or not structured
             for hit in vocabulary.scan(item.line.text, preferred=nice):
-                if rules.is_language_name(hit.text):
+                if rules.is_language_name(hit.text) or not (hit.strong or trust_weak):
                     continue
                 target = preferred if hit.preferred else required
                 if hit.norm not in required and hit.norm not in target:
@@ -130,7 +136,7 @@ class RulesExtractor:
             if nice or item.section == rules.RESPONSIBILITIES:
                 continue
             for sentence in rules.sentences(item.line.text):
-                if rules.has_preferred_cue(sentence):
+                if rules.has_preferred_cue(sentence) or rules.is_boilerplate(sentence):
                     continue
                 found = rules.years_in(sentence)
                 if found:
