@@ -1,7 +1,9 @@
 """The web page in front of the same pipeline as the JSON API (JM-43).
 
     GET  /         the upload page
-    POST /report   multipart ``file`` -> the report as an HTML page (one request, nothing stored)
+    POST /report   multipart ``file`` -> the report as an HTML page (one request, nothing stored);
+                   with ``Accept: text/event-stream`` the same request streams progress steps
+                   and ends with the page (JM-44, see ``progress.py``)
     GET  /static/  one stylesheet and one small script
 
 There is no login and no key in the browser. A key in a page's script is not a secret, so this
@@ -31,7 +33,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from starlette.staticfiles import StaticFiles
 
@@ -39,6 +41,7 @@ from jobpdf.api import app as api  # shares its form reading, limits and pipelin
 from jobpdf.api.access import AccessError
 from jobpdf.api.response import build_response
 from jobpdf.pipeline import MAX_UPLOAD_BYTES, PipelineError
+from jobpdf.web import progress
 from jobpdf.web.view import build_report
 
 log = logging.getLogger(__name__)
@@ -53,6 +56,10 @@ CONTENT_SECURITY_POLICY = (
     "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
     "connect-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 )
+# The upload page alone may make requests, and only to itself: its script posts the CV and reads
+# the progress stream (JM-44). Every other page keeps ``connect-src 'none'``.
+INDEX_CONTENT_SECURITY_POLICY = CONTENT_SECURITY_POLICY.replace(
+    "connect-src 'none'", "connect-src 'self'")
 PAGE_HEADERS = {
     "Cache-Control": "no-store",
     "Content-Security-Policy": CONTENT_SECURITY_POLICY,
@@ -83,8 +90,10 @@ def register_web(app: FastAPI) -> None:
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def index() -> HTMLResponse:
-        return _page("index.html", max_bytes=MAX_UPLOAD_BYTES, field=api.FILE_FIELD,
-                     path=REPORT_PATH)
+        return _page("index.html",
+                     headers={"Content-Security-Policy": INDEX_CONTENT_SECURITY_POLICY},
+                     max_bytes=MAX_UPLOAD_BYTES, field=api.FILE_FIELD, path=REPORT_PATH,
+                     steps=progress.STEPS)
 
     @app.post(REPORT_PATH, response_class=HTMLResponse, include_in_schema=False)
     async def report(request: Request) -> HTMLResponse:
@@ -101,6 +110,8 @@ def register_web(app: FastAPI) -> None:
         if not svc.slots.acquire(blocking=False):
             svc.recorder.record_access_denied(api.BUSY)
             return _error_page(api.BUSY, 503, retry_after=api.BUSY_RETRY_AFTER_S)
+        if progress.wants_stream(request.headers.get("accept")):
+            return _stream_report(svc, content, filename)  # now owns the slot
         try:
             result = await run_in_threadpool(api._run, svc, content, filename)
         except PipelineError as exc:
@@ -117,6 +128,41 @@ def register_web(app: FastAPI) -> None:
             return _error_page(api.INTERNAL_ERROR, 500)
 
 
+def _stream_report(svc: api.Services, content: bytes, filename: str) -> StreamingResponse:
+    """The report as a stream of progress steps. The analysis slot taken by the caller goes to
+    the worker thread, which gives it back when the analysis ends, however the client behaves."""
+
+    def work(on_stage) -> progress.Outcome:
+        try:
+            result = api._run(svc, content, filename, on_stage=on_stage)
+        except PipelineError as exc:
+            return _failed(exc.code, api.PIPELINE_STATUS.get(exc.code, 500))
+        except Exception as exc:  # already counted by the recorder; never echo the text
+            log.error("analysis failed unexpectedly (%s)", type(exc).__name__)
+            return _failed(api.INTERNAL_ERROR, 500)
+        on_stage(progress.RENDER_STAGE)
+        try:
+            html = _render("report.html", report=build_report(build_response(result)))
+        except Exception as exc:  # a page that cannot be drawn must not echo the CV either
+            log.error("report page failed (%s)", type(exc).__name__)
+            return _failed(api.INTERNAL_ERROR, 500)
+        return progress.Outcome("done", {"status": 200, "html": html})
+
+    try:
+        stream = progress.AnalysisStream(work, svc.slots.release)
+    except Exception:
+        svc.slots.release()  # the worker never started, so nobody else will
+        raise
+    return StreamingResponse(stream.events(), media_type=progress.STREAM_MEDIA_TYPE,
+                             headers={**PAGE_HEADERS, "X-Accel-Buffering": "no"})
+
+
+def _failed(code: str, status: int) -> progress.Outcome:
+    detail = _error_detail(code, None)
+    html = _render("error.html", detail=detail, code=code)
+    return progress.Outcome("failed", {"status": status, "html": html})
+
+
 def _client_ip(request: Request) -> str:
     """The address the limiter counts. A request without a usable address (no peer, a unix
     socket, a name that is not an IP) is counted together with all others like it, so it is
@@ -128,19 +174,27 @@ def _client_ip(request: Request) -> str:
         return UNKNOWN_CLIENT
 
 
+def _render(template: str, **context: Any) -> str:
+    return _templates.get_template(template).render(**context)
+
+
 def _page(template: str, status: int = 200, headers: dict[str, str] | None = None,
           **context: Any) -> HTMLResponse:
-    html = _templates.get_template(template).render(**context)
+    html = _render(template, **context)
     return HTMLResponse(html, status_code=status, headers={**PAGE_HEADERS, **(headers or {})})
 
 
-def _error_page(code: str, status: int, *, retry_after: int | None = None) -> HTMLResponse:
+def _error_detail(code: str, retry_after: int | None) -> str:
     detail = WEB_DETAILS.get(code) or api.ERROR_DETAILS.get(code, api.GENERIC_DETAIL)
+    return detail.replace("{wait}", _wait(retry_after) if retry_after else "a while")
+
+
+def _error_page(code: str, status: int, *, retry_after: int | None = None) -> HTMLResponse:
     headers = {}
     if retry_after is not None:
         headers["Retry-After"] = str(retry_after)
-    detail = detail.replace("{wait}", _wait(retry_after) if retry_after else "a while")
-    return _page("error.html", status=status, headers=headers, detail=detail, code=code)
+    return _page("error.html", status=status, headers=headers,
+                 detail=_error_detail(code, retry_after), code=code)
 
 
 def _wait(seconds: int) -> str:

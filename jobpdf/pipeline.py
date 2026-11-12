@@ -46,7 +46,7 @@ import shutil
 import tempfile
 import time
 from collections import Counter
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal
@@ -190,6 +190,7 @@ def analyze_cv(
     today: dt.date | None = None,
     max_bytes: int = MAX_UPLOAD_BYTES,
     temp_dir: Path | None = None,
+    on_stage: Callable[[Stage], None] | None = None,
 ) -> PipelineResult:
     """Run one CV through every stage and rank ``vacancies`` for it.
 
@@ -197,33 +198,43 @@ def analyze_cv(
     ``PipelineResult.warnings``. ``caller``, ``normalizer`` and ``embedder`` default to
     the real services; tests pass fakes. ``temp_dir`` defaults to ``TEMP_DIR``. Nothing
     is stored.
+
+    ``on_stage`` (JM-44) is called with a stage's name just before that stage starts, in the
+    order of ``STAGES``, so a page can show where the analysis is. It receives a name and
+    nothing else, and an error raised by it is logged by type and ignored: reporting
+    progress never changes the result.
     """
     started = time.perf_counter()
     timings: dict[str, int] = {}
     warnings = _Warnings()
 
+    _notify(on_stage, "parse")
     with _timed(timings, "parse"):
         doc = _parse(content, filename, max_bytes, temp_dir if temp_dir is not None else TEMP_DIR)
     warnings.add_many("parse", (PARSE_WARNING_CODES.get(w, "parse_warning") for w in doc.warnings))
     if not doc.full_text.strip():
         raise PipelineError("parse", NO_TEXT)
 
+    _notify(on_stage, "sections")
     with _timed(timings, "sections"):
         sections, section_warnings = split_sections(doc)
     warnings.add_many(
         "sections", (SECTION_WARNING_CODES.get(w, "sections_warning") for w in section_warnings)
     )
 
+    _notify(on_stage, "extraction")
     with _timed(timings, "extraction"):
         extraction = _extract(doc, sections, caller, today)
     profile = extraction.profile
     warnings.add_many("extraction", (classify_extraction_warning(w) for w in extraction.warnings))
 
+    _notify(on_stage, "grounding")
     with _timed(timings, "grounding"):
         masked_text, _ = mask_pii(doc.full_text)  # what the LLM saw, same length as the CV
         grounding = ground(profile, doc, sections, searched_text=masked_text)
     warnings.add_many("grounding", (w.code for w in grounding.warnings))
 
+    _notify(on_stage, "normalization")
     normalizer = normalizer if normalizer is not None else get_normalization_service()
     with _timed(timings, "normalization"):
         skills = normalizer.normalize_profile(profile)
@@ -232,6 +243,7 @@ def analyze_cv(
         warnings.add_many("normalization", match.warnings)
 
     vectors: CandidateVectors | None = None
+    _notify(on_stage, "embedding")
     with _timed(timings, "embedding"):
         try:
             vectors = embed_candidate(profile, embedder)
@@ -245,6 +257,7 @@ def analyze_cv(
     if not vacancies:
         warnings.add("ranking", NO_VACANCIES)
     options = {} if scorer is None else {"scorer": scorer}
+    _notify(on_stage, "ranking")
     with _timed(timings, "ranking"):
         ranking = rank_vacancies(candidate_skills, vectors, vacancies, adjustments, **options)
     warnings.add_many("ranking", ranking.warnings)
@@ -368,6 +381,16 @@ class _Warnings:
         ordered = sorted(self._counts.items(), key=lambda kv: (STAGES.index(kv[0][0]), kv[0][1]))
         return [PipelineWarning(stage=stage, code=code, count=count)
                 for (stage, code), count in ordered]
+
+
+def _notify(on_stage: Callable[[Stage], None] | None, stage: Stage) -> None:
+    """Tell ``on_stage`` a stage is starting. Its failure is the page's problem, not the CV's."""
+    if on_stage is None:
+        return
+    try:
+        on_stage(stage)
+    except Exception as exc:
+        log.warning("progress callback failed at %s (%s)", stage, type(exc).__name__)
 
 
 @contextmanager

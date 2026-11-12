@@ -275,10 +275,14 @@ async def _read_form(request: Request, svc: Services) -> tuple[bytes, str]:
         await form.close()
 
 
-def _run(svc: Services, content: bytes, filename: str) -> PipelineResult:
+def _run(svc: Services, content: bytes, filename: str, *,
+         on_stage: Callable[[str], None] | None = None) -> PipelineResult:
+    """The pipeline, observed. ``on_stage`` (the web page's progress, JM-44) is passed on only
+    when given, so an ``analyze`` that does not know it still works."""
+    progress = {} if on_stage is None else {"on_stage": on_stage}
     return svc.recorder.observe_analysis(lambda: svc.analyze(
         content, filename, svc.vacancies(), caller=svc.caller, normalizer=svc.normalizer,
-        embedder=svc.embedder, scorer=svc.scorer))
+        embedder=svc.embedder, scorer=svc.scorer, **progress))
 
 
 def _error(code: str, status: int, *, stage: str | None = None,

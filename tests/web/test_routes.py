@@ -19,7 +19,12 @@ from jobpdf.api.access import (
 from jobpdf.api.app import Services, create_app
 from jobpdf.pipeline import MAX_UPLOAD_BYTES, PipelineError
 from jobpdf.web import routes
-from jobpdf.web.routes import CONTENT_SECURITY_POLICY, PAGE_HEADERS, WEB_DETAILS
+from jobpdf.web.routes import (
+    CONTENT_SECURITY_POLICY,
+    INDEX_CONTENT_SECURITY_POLICY,
+    PAGE_HEADERS,
+    WEB_DETAILS,
+)
 from tests.api.test_app import HEADERS, IP_SECRET, analyze_offline, make_services
 from tests.pipeline.fakes import SECRETS, VACANCIES, cv_bytes
 
@@ -73,6 +78,8 @@ def test_the_upload_page_tells_people_where_their_cv_goes(client) -> None:
 def test_every_page_is_private_and_locked_down(client) -> None:
     for response in (client.get("/"), post(client)):
         for name, value in PAGE_HEADERS.items():
+            if name == "Content-Security-Policy" and response.request.method == "GET":
+                value = INDEX_CONTENT_SECURITY_POLICY  # JM-44: only this page may post and read
             assert response.headers[name] == value, name
     assert PAGE_HEADERS["Cache-Control"] == "no-store"
     assert PAGE_HEADERS["Referrer-Policy"] == "no-referrer"
@@ -115,6 +122,19 @@ def test_the_content_security_policy_allows_nothing_inline_or_remote() -> None:
     assert policy["script-src"] == "'self'" and policy["style-src"] == "'self'"
     assert policy["form-action"] == "'self'" and policy["frame-ancestors"] == "'none'"
     assert "unsafe" not in CONTENT_SECURITY_POLICY and "*" not in CONTENT_SECURITY_POLICY
+
+
+def test_only_the_upload_page_may_make_requests_and_only_to_itself(client) -> None:
+    index = dict(part.strip().split(" ", 1)
+                 for part in client.get("/").headers["content-security-policy"].split(";"))
+
+    assert index["connect-src"] == "'self'" and index["default-src"] == "'none'"
+    assert index["script-src"] == "'self'" and "unsafe" not in str(index) and "*" not in str(index)
+    assert INDEX_CONTENT_SECURITY_POLICY == CONTENT_SECURITY_POLICY.replace(
+        "connect-src 'none'", "connect-src 'self'")
+    for response in (post(client), post(client, b"not a pdf at all"), client.get("/nope")):
+        policy = response.headers.get("content-security-policy")
+        assert policy is None or "connect-src 'none'" in policy
 
 
 def test_the_json_api_is_unchanged_and_the_pages_are_not_in_its_description(client) -> None:
