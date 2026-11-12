@@ -28,6 +28,11 @@
     <label for="cv">Your CV (PDF or DOCX, up to {{ max_bytes // 1048576 }} MB)</label>
     <input id="cv" name="{{ field }}" type="file" required
            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+    <label class="field" for="{{ language_field }}">Skill names in the report</label>
+    <select id="{{ language_field }}" name="{{ language_field }}">
+      <option value="en"{% if language == "en" %} selected{% endif %}>English</option>
+      <option value="uk" lang="uk"{% if language == "uk" %} selected{% endif %}>Українська</option>
+    </select>
     <button type="submit">Check my CV</button>
     <p id="status" class="status" role="status" aria-live="polite"></p>
   </form>

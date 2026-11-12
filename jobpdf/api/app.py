@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -57,6 +57,7 @@ from jobpdf.api.vacancies import VacancyProvider, postgres_loader
 from jobpdf.extraction.llm import ToolCaller
 from jobpdf.monitoring.health import HealthReport, build_health, http_status
 from jobpdf.monitoring.metrics import MetricsRecorder, MetricsSnapshot
+from jobpdf.normalization import skill_names as skill_labels
 from jobpdf.normalization.db import database_url
 from jobpdf.normalization.embedder import TextEmbedder
 from jobpdf.normalization.service import NormalizationService, get_normalization_service
@@ -155,6 +156,8 @@ class Services:
     caller: ToolCaller | None = None
     embedder: TextEmbedder | None = None
     analyze: Callable[..., PipelineResult] = analyze_cv
+    # Ukrainian skill names for the web report (JM-46): concept id -> name; empty when unknown.
+    skill_names: Callable[[], Mapping[str, str]] = skill_labels.no_names
     health: Callable[..., HealthReport] = build_health
     max_concurrent: int = MAX_CONCURRENT_ANALYSES
     slots: threading.BoundedSemaphore = field(init=False)
@@ -170,8 +173,10 @@ def build_services() -> Services:
     normalizer = get_normalization_service()
     url = database_url()
     provider = VacancyProvider(postgres_loader(url) if url else (lambda: ()))
+    names = (skill_labels.IndexSkillNames(skill_labels.postgres_loader(url)).get if url
+             else skill_labels.no_names)
     return Services(access=access, vacancies=provider.get, normalizer=normalizer,
-                    scorer=select_scorer())
+                    scorer=select_scorer(), skill_names=names)
 
 
 def create_app(services: Services | None = None) -> FastAPI:
@@ -260,6 +265,14 @@ def _declared_length(request: Request) -> int | None:
 
 async def _read_form(request: Request, svc: Services) -> tuple[bytes, str]:
     """The uploaded file's bytes and name; closes the form (and its temporary file) at once."""
+    content, filename, _ = await read_form(request, svc)
+    return content, filename
+
+
+async def read_form(request: Request, svc: Services,
+                    fields: tuple[str, ...] = ()) -> tuple[bytes, str, dict[str, str]]:
+    """Like ``_read_form``, plus the plain text fields named in ``fields`` (the web form's
+    language choice, JM-46). A field that is missing or is a file comes back as ``""``."""
     try:
         form = await request.form()
     except BodyTooLarge:
@@ -270,7 +283,9 @@ async def _read_form(request: Request, svc: Services) -> tuple[bytes, str]:
         upload = form.get(FILE_FIELD)
         if not isinstance(upload, UploadFile):
             raise BadRequest
-        return svc.access.read_upload(upload.file), upload.filename or ""
+        values = {name: value if isinstance(value := form.get(name), str) else ""
+                  for name in fields}
+        return svc.access.read_upload(upload.file), upload.filename or "", values
     finally:
         await form.close()
 

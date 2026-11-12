@@ -314,7 +314,7 @@ def test_an_unexpected_error_is_a_generic_page_that_repeats_nothing(caplog) -> N
 
 
 def test_a_page_that_cannot_be_drawn_is_the_same_generic_page(monkeypatch, caplog, client) -> None:
-    def broken(response):
+    def broken(response, names=None):
         raise KeyError(SECRETS[0])
 
     monkeypatch.setattr(routes, "build_report", broken)
