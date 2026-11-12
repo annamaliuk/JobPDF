@@ -259,7 +259,9 @@ def test_the_form_preselects_the_browsers_language(header, picked) -> None:
 
     selected = {"en": '<option value="en" selected>English</option>',
                 "uk": '<option value="uk" lang="uk" selected>Українська</option>'}[picked]
-    assert selected in html and html.count(" selected>") == 1
+    assert selected in html
+    language_select = html.split('<select id="lang"', 1)[1].split("</select>", 1)[0]
+    assert language_select.count(" selected>") == 1
 
 
 def test_the_language_choice_is_part_of_the_form_and_needs_no_script() -> None:

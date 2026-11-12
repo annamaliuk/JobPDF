@@ -44,6 +44,7 @@ from jobpdf.ingestion.sources.registry import SOURCE_NAMES, build_adapter
 from jobpdf.ingestion.sources.remotive import to_source_posting
 from jobpdf.ingestion.sources.runner import read_cache
 from jobpdf.ingestion.store import VacancyStore, Versions
+from jobpdf.ingestion.work_place import classify_work_mode, posting_country
 from jobpdf.normalization.matcher import SkillMatch
 from jobpdf.ranking.models import SkillRef, VacancyFeatures
 from jobpdf.ranking.semantic import (
@@ -145,6 +146,7 @@ def build_features(
             id=posting.source_id, source=posting.source, title=posting.title,
             company=posting.company, url=posting.url, posted_at=posting.posted_at,
             location_raw=posting.location_raw,
+            work_mode=classify_work_mode(posting), country=posting_country(posting),
             required_skills=_refs(groups["required"]),
             preferred_skills=_refs(groups["preferred"]),
             responsibilities=requirements.responsibilities,
