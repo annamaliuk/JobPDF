@@ -103,6 +103,7 @@ class Adzuna:
             title=item["title"],
             company=nested_text(item.get("company"), "display_name"),
             location_raw=nested_text(item.get("location"), "display_name"),
+            country=self.country,  # every result of a search is a job in the searched country
             posted_at=parse_time(item.get("created")),
             description=text_or_none(item.get("description")), description_is_excerpt=True,
             category=nested_text(item.get("category"), "label"),

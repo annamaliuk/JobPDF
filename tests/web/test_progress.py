@@ -208,7 +208,7 @@ def test_a_page_that_cannot_be_drawn_ends_the_stream_with_a_generic_page(monkeyp
                                                                           caplog) -> None:
     from jobpdf.web import routes
 
-    def broken(response, names=None):
+    def broken(response, names=None, home=None):
         raise KeyError(SECRETS[0])
 
     monkeypatch.setattr(routes, "build_report", broken)

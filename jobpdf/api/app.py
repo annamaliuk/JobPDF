@@ -62,6 +62,7 @@ from jobpdf.normalization.db import database_url
 from jobpdf.normalization.embedder import TextEmbedder
 from jobpdf.normalization.service import NormalizationService, get_normalization_service
 from jobpdf.pipeline import MAX_UPLOAD_BYTES, PipelineError, PipelineResult, analyze_cv
+from jobpdf.ranking.eligibility import abroad_adjustments
 from jobpdf.ranking.learned import select_scorer
 from jobpdf.ranking.models import VacancyFeatures
 from jobpdf.ranking.score import Scorer
@@ -291,13 +292,24 @@ async def read_form(request: Request, svc: Services,
 
 
 def _run(svc: Services, content: bytes, filename: str, *,
-         on_stage: Callable[[str], None] | None = None) -> PipelineResult:
-    """The pipeline, observed. ``on_stage`` (the web page's progress, JM-44) is passed on only
-    when given, so an ``analyze`` that does not know it still works."""
-    progress = {} if on_stage is None else {"on_stage": on_stage}
-    return svc.recorder.observe_analysis(lambda: svc.analyze(
-        content, filename, svc.vacancies(), caller=svc.caller, normalizer=svc.normalizer,
-        embedder=svc.embedder, scorer=svc.scorer, **progress))
+         on_stage: Callable[[str], None] | None = None,
+         home_country: str | None = None) -> PipelineResult:
+    """The pipeline, observed. ``on_stage`` (the web page's progress, JM-44) and
+    ``home_country`` (hide on-site jobs abroad, JM-49) are passed on only when given, so an
+    ``analyze`` that does not know them still works."""
+
+    def call() -> PipelineResult:  # inside the observation: a failing vacancy list is counted
+        vacancies = svc.vacancies()
+        extra: dict[str, Any] = {}
+        if on_stage is not None:
+            extra["on_stage"] = on_stage
+        if home_country is not None:
+            extra["adjustments"] = abroad_adjustments(vacancies, home_country)
+        return svc.analyze(
+            content, filename, vacancies, caller=svc.caller, normalizer=svc.normalizer,
+            embedder=svc.embedder, scorer=svc.scorer, **extra)
+
+    return svc.recorder.observe_analysis(call)
 
 
 def _error(code: str, status: int, *, stage: str | None = None,

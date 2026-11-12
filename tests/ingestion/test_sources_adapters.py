@@ -337,6 +337,15 @@ def test_adzuna_first_request_targets_the_country_search_with_credentials() -> N
                               "results_per_page": "50", "content-type": "application/json"}
 
 
+def test_adzuna_postings_carry_the_country_that_was_searched() -> None:
+    page = adzuna_page([adzuna_job(1)])
+
+    assert {p.country for p in adz().parse_page(page).postings} == {"GB"}
+    assert {p.country for p in adz(country="pl").parse_page(page).postings} == {"PL"}
+    assert {p.country for p in Adzuna.from_environment(
+        {"ADZUNA_COUNTRY": "DE"}).parse_page(page).postings} == {"DE"}
+
+
 def test_adzuna_country_and_query_come_from_the_environment() -> None:
     adapter = Adzuna.from_environment({"ADZUNA_APP_ID": "a", "ADZUNA_APP_KEY": "b",
                                        "ADZUNA_COUNTRY": "DE", "ADZUNA_QUERY": "python remote"})

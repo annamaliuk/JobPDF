@@ -33,6 +33,15 @@
       <option value="en"{% if language == "en" %} selected{% endif %}>English</option>
       <option value="uk" lang="uk"{% if language == "uk" %} selected{% endif %}>Українська</option>
     </select>
+    <label class="field" for="{{ home_field }}">Hide on-site jobs outside</label>
+    <select id="{{ home_field }}" name="{{ home_field }}" aria-describedby="{{ home_field }}-hint">
+      <option value="" selected>Don't hide any jobs</option>
+{% for code, name in countries %}
+      <option value="{{ code }}">{{ name }}</option>
+{% endfor %}
+    </select>
+    <p id="{{ home_field }}-hint" class="quiet hint">Choose the country you live in to leave out jobs that
+      need you in an office, or part of the week in one, in another country. Remote jobs stay.</p>
     <button type="submit">Check my CV</button>
     <p id="status" class="status" role="status" aria-live="polite"></p>
   </form>
