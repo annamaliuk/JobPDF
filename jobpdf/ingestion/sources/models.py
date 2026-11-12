@@ -58,7 +58,6 @@ class SourcePosting(BaseModel):
     company: str | None = None
     location_raw: str | None = None  # as the source wrote it, for the eligibility checks
     remote: bool | None = None  # None: the source does not say
-    country: str | None = None  # ISO 3166-1 alpha-2, only when the source itself states it
     posted_at: datetime | None = None  # timezone-aware
     description: str | None = None  # HTML or text as received
     description_is_excerpt: bool = False  # True: only a snippet; requirement extraction is weaker
@@ -80,16 +79,6 @@ class SourcePosting(BaseModel):
         if not value.startswith(("http://", "https://")):
             raise ValueError("url must be http(s)")
         return value
-
-    @field_validator("country")
-    @classmethod
-    def _country_code(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        code = value.strip().upper()
-        if not re.fullmatch(r"[A-Z]{2}", code):
-            raise ValueError("country must be a two-letter code")
-        return code
 
     @field_validator("posted_at")
     @classmethod

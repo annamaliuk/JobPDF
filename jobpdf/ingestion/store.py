@@ -45,7 +45,7 @@ from jobpdf.ranking.models import VacancyFeatures
 log = logging.getLogger(__name__)
 
 SCHEMA_FILE = Path(__file__).resolve().parents[2] / "sql" / "004_vacancies.sql"
-HASH_VERSION = "2"  # bump when the hashed fields change: every row is then reprocessed once
+HASH_VERSION = "1"  # bump when the hashed fields change: every row is then reprocessed once
 
 NEW = "new"
 CHANGED = "changed"
@@ -102,7 +102,7 @@ def content_hash(posting: SourcePosting) -> str:
     material = {
         "v": HASH_VERSION,
         "title": posting.title, "company": posting.company, "url": posting.url,
-        "location": posting.location_raw, "remote": posting.remote, "country": posting.country,
+        "location": posting.location_raw, "remote": posting.remote,
         "description": posting.description, "excerpt": posting.description_is_excerpt,
         "tags": sorted(posting.tags), "category": posting.category,
         "type": posting.employment_type, "salary": posting.salary_raw,

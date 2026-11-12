@@ -279,7 +279,6 @@ class AnalysisResponse(_Frozen):
     pagination: Pagination
     band_counts: dict[Band, int]  # all visible matches, not just this page
     hidden_count: int
-    hidden_reasons: dict[str, int] = {}  # why vacancies were left out: reason code -> how many
     insights: Insights
     scoring: Scoring
     warnings: list[WarningOut]
@@ -320,7 +319,6 @@ def build_response(
                               pages=max(math.ceil(total / size), 1)),
         band_counts=dict(ranking.band_counts),
         hidden_count=ranking.hidden_count,
-        hidden_reasons=_hidden_reasons(ranking.hidden),
         insights=insights if insights is not None else Insights(),
         scoring=Scoring(scorer=ranking.scorer_name, weights=dict(ranking.weights),
                         thresholds=dict(ranking.thresholds),
@@ -352,15 +350,6 @@ def insights_out(result: InsightsResult) -> Insights:
         in_demand=[InDemand(skill=skill_from_ref(i.skill), count=i.count)
                    for i in result.in_demand],
     )
-
-
-def _hidden_reasons(hidden: list) -> dict[str, int]:
-    """How many hidden vacancies each reason accounts for (a vacancy counts once per reason)."""
-    counts: dict[str, int] = {}
-    for fit in hidden:
-        for reason in dict.fromkeys(fit.adjustment_reasons):
-            counts[reason] = counts.get(reason, 0) + 1
-    return counts
 
 
 def warning_out(code: str, stage: str | None = None, count: int = 1) -> WarningOut:

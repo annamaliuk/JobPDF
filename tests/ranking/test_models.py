@@ -109,7 +109,6 @@ def test_vacancy_with_only_required_fields_has_correct_defaults() -> None:
 
     assert vacancy.model_dump(exclude={"id", "source", "title"}) == {
         "company": None, "url": None, "posted_at": None, "location_raw": None,
-        "work_mode": None, "country": None,
         "required_skills": [], "preferred_skills": [], "responsibilities": [],
         "min_years_experience": None, "education_requirement": None, "languages": None,
         "embedding": None, "embedding_version": None, "vacancy_text_version": None,

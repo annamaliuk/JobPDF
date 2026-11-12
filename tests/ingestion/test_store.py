@@ -88,9 +88,9 @@ def test_the_posted_time_and_identity_do_not_change_the_hash() -> None:
 def test_the_hash_is_pinned_so_an_accidental_change_is_noticed() -> None:
     # If this fails you changed what counts as "changed": bump HASH_VERSION on purpose,
     # because every stored vacancy will be reprocessed once.
-    assert HASH_VERSION == "2"
+    assert HASH_VERSION == "1"
     assert content_hash(posting(1)) == (
-        "39c1b269f461945089d397f80843d60b6d56a02c5a332d5c59f852320d4aac26")
+        "d810ab508a2152648262252e6b051b7313e6e162060bf42287624621587d51a6")
 
 
 # --- stale versions --------------------------------------------------------------------
@@ -537,8 +537,3 @@ def test_a_table_from_before_jm48_gets_the_extraction_column(conn) -> None:
     columns = {r[0] for r in conn.execute(
         "SELECT column_name FROM information_schema.columns WHERE table_name = 'vacancies'")}
     assert "extraction_version" in columns
-
-
-def test_the_country_a_source_states_is_part_of_what_counts_as_changed() -> None:
-    assert content_hash(posting(1, country="GB")) != content_hash(posting(1, country="DE"))
-    assert content_hash(posting(1, country="GB")) != content_hash(posting(1))

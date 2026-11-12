@@ -91,7 +91,6 @@ main > section.intro { margin-top: 1.5rem; }
 p { margin: 0 0 0.75rem; max-width: 40rem; }
 .lead { font-size: 1.1875rem; margin-top: 1rem; }
 .quiet { color: var(--muted); }
-.hint { margin-top: 0.5rem; max-width: 36rem; }
 .code { color: var(--muted); font-family: var(--sans); font-size: 0.875rem; }
 
 /* upload form */

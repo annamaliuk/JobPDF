@@ -30,8 +30,6 @@ from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 from jobpdf.api.response import AnalysisResponse, MatchOut, SkillOut
-from jobpdf.places import country_name
-from jobpdf.ranking.eligibility import ON_SITE_ABROAD
 from jobpdf.ranking.score import Band
 
 BEST_COUNT = 5  # matches shown as full rows; the rest are in the table
@@ -47,8 +45,6 @@ BAND_LABELS = {
     Band.UNSCORED.value: "Not scored",
 }
 NO_JOBS = "There are no jobs to compare with your CV yet. Try again later."
-EVERYTHING_HIDDEN = ("Every job we know of is on site in another country, so none is shown. "
-                     "To see them, choose \"Don't hide\" on the upload page.")
 NO_REQUIRED = "This job lists no required skills, so your skills could not be compared."
 
 
@@ -136,8 +132,7 @@ class Report:
     empty: str | None = None
 
 
-def build_report(response: AnalysisResponse, names: Mapping[str, str] | None = None,
-                 home_country: str | None = None) -> Report:
+def build_report(response: AnalysisResponse, names: Mapping[str, str] | None = None) -> Report:
     labels = _Labels(names)
     jobs = [_job(m, labels) for m in response.matches]
     by_id = {m.vacancy.id: m for m in response.matches}
@@ -153,9 +148,9 @@ def build_report(response: AnalysisResponse, names: Mapping[str, str] | None = N
                 for s in skills if s.recognised],
         readings=_readings(skills, labels),
         unrecognised=[s.name for s in skills if not s.recognised],
-        notes=_notes(response, home_country),
+        notes=_notes(response),
         scoring=_scoring(response),
-        empty=None if jobs else _empty(response),
+        empty=None if jobs else NO_JOBS,
     )
 
 
@@ -306,37 +301,14 @@ def _learn(response: AnalysisResponse, labels: _Labels) -> list[str]:
     ]
 
 
-def _empty(response: AnalysisResponse) -> str:
-    """Why there is nothing to show: no jobs at all, or every job was left out on request."""
-    if response.hidden_count and \
-            response.hidden_reasons.get(ON_SITE_ABROAD, 0) == response.hidden_count:
-        return EVERYTHING_HIDDEN
-    return NO_JOBS
-
-
-def _notes(response: AnalysisResponse, home_country: str | None = None) -> list[str]:
+def _notes(response: AnalysisResponse) -> list[str]:
     notes = []
     for warning in response.warnings:
         suffix = f" (affects {warning.count} items)" if warning.count > 1 else ""
         notes.append(warning.detail + suffix)
-    notes.extend(_hidden_notes(response, home_country))
-    return notes
-
-
-def _hidden_notes(response: AnalysisResponse, home_country: str | None) -> list[str]:
-    """What was left out, and for which reason; reasons the page does not know are worded
-    as before."""
-    notes = []
-    abroad = response.hidden_reasons.get(ON_SITE_ABROAD, 0)
-    if abroad:
-        where = f"outside {country_name(home_country)}" if country_name(home_country) \
-            else "in another country"
-        notes.append(f"{plural(abroad, 'on-site or hybrid posting')} {where} left out, "
-                     "as you asked.")
-    other = max(response.hidden_count - abroad, 0)
-    if other:
+    if response.hidden_count:
         notes.append(
-            f"{plural(other, 'posting')} left out because your CV suggests "
+            f"{plural(response.hidden_count, 'posting')} left out because your CV suggests "
             "you could not apply for them.")
     return notes
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from datetime import datetime
-from typing import Any, Literal, Protocol
+from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
@@ -94,8 +94,6 @@ class VacancyFeatures(_ContractModel):
     url: str | None = None
     posted_at: datetime | None = None
     location_raw: str | None = None  # source text, unchanged
-    work_mode: Literal["remote", "hybrid", "on_site"] | None = None  # None: not known (JM-49)
-    country: str | None = None  # ISO 3166-1 alpha-2 of the place; None: not known (JM-49)
     # vacancy extraction + normalization
     required_skills: list[SkillRef] = Field(default_factory=list)
     preferred_skills: list[SkillRef] = Field(default_factory=list)

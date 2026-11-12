@@ -76,7 +76,7 @@ def test_every_step_the_script_can_be_told_about_is_a_step_of_the_page() -> None
 
     html = routes._templates.get_template("index.html").render(
         steps=progress.STEPS, max_bytes=1, field="file", path="/report", language_field="lang",
-        language="en", home_field="home_country", countries=[("UA", "Ukraine")])
+        language="en")
 
     assert re.findall(r'data-step="([a-z]+)"', html) == list(progress.STEP_IDS)
     assert 'data-state="waiting"' in html  # every step starts plain; the script sets the others

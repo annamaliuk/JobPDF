@@ -45,8 +45,6 @@ from jobpdf.api.access import AccessError
 from jobpdf.api.response import build_response
 from jobpdf.normalization import skill_names
 from jobpdf.pipeline import MAX_UPLOAD_BYTES, PipelineError, PipelineResult
-from jobpdf.places import COUNTRY_NAMES
-from jobpdf.ranking.eligibility import normalize_country
 from jobpdf.web import progress
 from jobpdf.web.view import build_report
 
@@ -56,7 +54,6 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 TEMPLATE_DIR = PACKAGE_DIR / "templates"
 STATIC_DIR = PACKAGE_DIR / "static"
 REPORT_PATH = "/report"
-HOME_COUNTRY_FIELD = "home_country"  # the form's "hide on-site jobs outside" choice; "" = none
 UNKNOWN_CLIENT = "0.0.0.0"  # one shared bucket for a request with no usable address
 
 CONTENT_SECURITY_POLICY = (
@@ -91,10 +88,6 @@ _templates = Environment(
 )
 
 
-# What the upload form offers for "hide on-site jobs outside": every country we can recognise.
-_COUNTRY_CHOICES = tuple(sorted(COUNTRY_NAMES.items(), key=lambda item: item[1]))
-
-
 def marked(value: str) -> str | Markup:
     """A report sentence for the page. When it holds Ukrainian skill names (a ``view.Line``), each
     one is wrapped in ``<span lang="uk">`` so a screen reader pronounces it right; everything
@@ -122,7 +115,6 @@ def register_web(app: FastAPI) -> None:
                      headers={"Content-Security-Policy": INDEX_CONTENT_SECURITY_POLICY},
                      max_bytes=MAX_UPLOAD_BYTES, field=api.FILE_FIELD, path=REPORT_PATH,
                      steps=progress.STEPS, language_field=skill_names.LANGUAGE_FIELD,
-                     home_field=HOME_COUNTRY_FIELD, countries=_COUNTRY_CHOICES,
                      language=skill_names.preferred_language(request.headers.get("accept-language")))
 
     @app.post(REPORT_PATH, response_class=HTMLResponse, include_in_schema=False)
@@ -131,7 +123,7 @@ def register_web(app: FastAPI) -> None:
         try:
             svc.access.authorize_web(_client_ip(request), api._declared_length(request))
             content, filename, fields = await api.read_form(
-                request, svc, (skill_names.LANGUAGE_FIELD, HOME_COUNTRY_FIELD))
+                request, svc, (skill_names.LANGUAGE_FIELD,))
         except AccessError as exc:
             svc.recorder.record_access_denied(exc.code)
             return _error_page(exc.code, exc.status, retry_after=exc.retry_after)
@@ -139,15 +131,13 @@ def register_web(app: FastAPI) -> None:
             return _error_page(api.INVALID_REQUEST, 400)
 
         language = skill_names.choose_language(fields[skill_names.LANGUAGE_FIELD])
-        home = normalize_country(fields[HOME_COUNTRY_FIELD])  # None: hide nothing
         if not svc.slots.acquire(blocking=False):
             svc.recorder.record_access_denied(api.BUSY)
             return _error_page(api.BUSY, 503, retry_after=api.BUSY_RETRY_AFTER_S)
         if progress.wants_stream(request.headers.get("accept")):
-            return _stream_report(svc, content, filename, language, home)  # now owns the slot
+            return _stream_report(svc, content, filename, language)  # now owns the slot
         try:
-            result = await run_in_threadpool(api._run, svc, content, filename,
-                                             home_country=home)
+            result = await run_in_threadpool(api._run, svc, content, filename)
         except PipelineError as exc:
             return _error_page(exc.code, api.PIPELINE_STATUS.get(exc.code, 500))
         except Exception as exc:  # already counted by the recorder; never echo the text
@@ -157,15 +147,14 @@ def register_web(app: FastAPI) -> None:
             svc.slots.release()
         try:
             # In a thread: the first Ukrainian report reads the names from the database.
-            html = await run_in_threadpool(_report_html, svc, result, language, home)
+            html = await run_in_threadpool(_report_html, svc, result, language)
         except Exception as exc:  # a page that cannot be drawn must not echo the CV either
             log.error("report page failed (%s)", type(exc).__name__)
             return _error_page(api.INTERNAL_ERROR, 500)
         return HTMLResponse(html, headers=PAGE_HEADERS)
 
 
-def _report_html(svc: api.Services, result: PipelineResult, language: str,
-                 home: str | None = None) -> str:
+def _report_html(svc: api.Services, result: PipelineResult, language: str) -> str:
     """The report page. Skill names are Ukrainian only when asked for; if the names cannot be
     loaded the page is made in English (``skill_names`` logs why)."""
     names: Mapping[str, str] | None = None
@@ -174,18 +163,17 @@ def _report_html(svc: api.Services, result: PipelineResult, language: str,
             names = svc.skill_names()
         except Exception as exc:  # never a reason to lose the report
             log.warning("ukrainian skill names unavailable (%s)", type(exc).__name__)
-    return _render("report.html",
-                   report=build_report(build_response(result), names, home))
+    return _render("report.html", report=build_report(build_response(result), names))
 
 
-def _stream_report(svc: api.Services, content: bytes, filename: str, language: str,
-                   home: str | None = None) -> StreamingResponse:
+def _stream_report(svc: api.Services, content: bytes, filename: str,
+                   language: str) -> StreamingResponse:
     """The report as a stream of progress steps. The analysis slot taken by the caller goes to
     the worker thread, which gives it back when the analysis ends, however the client behaves."""
 
     def work(on_stage) -> progress.Outcome:
         try:
-            result = api._run(svc, content, filename, on_stage=on_stage, home_country=home)
+            result = api._run(svc, content, filename, on_stage=on_stage)
         except PipelineError as exc:
             return _failed(exc.code, api.PIPELINE_STATUS.get(exc.code, 500))
         except Exception as exc:  # already counted by the recorder; never echo the text
@@ -193,7 +181,7 @@ def _stream_report(svc: api.Services, content: bytes, filename: str, language: s
             return _failed(api.INTERNAL_ERROR, 500)
         on_stage(progress.RENDER_STAGE)
         try:
-            html = _report_html(svc, result, language, home)
+            html = _report_html(svc, result, language)
         except Exception as exc:  # a page that cannot be drawn must not echo the CV either
             log.error("report page failed (%s)", type(exc).__name__)
             return _failed(api.INTERNAL_ERROR, 500)

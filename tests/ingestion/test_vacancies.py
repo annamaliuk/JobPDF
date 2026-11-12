@@ -412,39 +412,3 @@ def test_the_summary_is_plain_counts_and_codes() -> None:
     assert set(dumped) == {
         "source", "received", "duplicates", "new", "changed", "stale", "unchanged",
         "inserted", "updated", "skipped_older", "deferred", "failed", "warnings", "aborted"}
-
-
-# --- where a vacancy is worked (JM-49) ---------------------------------------------------------
-
-
-def built(**changes):
-    w = World()
-    features, _ = build_features(posting(1, **changes), extractor=w.extractor,
-                                 normalizer=w.service, embedder=w.embedder)
-    return features
-
-
-def test_a_built_vacancy_says_how_and_where_it_is_worked() -> None:
-    features = built(remote=False, location_raw="Berlin, Germany")
-
-    assert (features.work_mode, features.country) == ("on_site", "DE")
-
-
-def test_a_remote_vacancy_keeps_the_country_of_its_place_text() -> None:
-    features = built(remote=True, location_raw="Germany")
-
-    assert (features.work_mode, features.country) == ("remote", "DE")
-
-
-def test_a_stated_country_wins_and_unknown_places_stay_unknown() -> None:
-    assert built(remote=False, location_raw="London", country="de").country == "DE"
-    unknown = built(remote=None, location_raw="Worldwide", description="Join us.")
-    assert (unknown.work_mode, unknown.country) == (None, None)
-
-
-def test_the_new_fields_survive_the_json_the_store_keeps() -> None:
-    features = built(remote=False, location_raw="Warsaw")
-
-    again = type(features).model_validate_json(features.model_dump_json())
-
-    assert again == features and again.work_mode == "on_site" and again.country == "PL"
