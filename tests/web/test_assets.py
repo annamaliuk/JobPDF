@@ -75,7 +75,8 @@ def test_every_step_the_script_can_be_told_about_is_a_step_of_the_page() -> None
     from jobpdf.web import progress
 
     html = routes._templates.get_template("index.html").render(
-        steps=progress.STEPS, max_bytes=1, field="file", path="/report")
+        steps=progress.STEPS, max_bytes=1, field="file", path="/report", language_field="lang",
+        language="en")
 
     assert re.findall(r'data-step="([a-z]+)"', html) == list(progress.STEP_IDS)
     assert 'data-state="waiting"' in html  # every step starts plain; the script sets the others
@@ -118,6 +119,7 @@ def test_every_static_file_a_page_names_exists() -> None:
 def test_every_template_compiles_and_only_uses_what_the_pages_pass() -> None:
     env = Environment(loader=FileSystemLoader(TEMPLATE_DIR), undefined=StrictUndefined,
                       autoescape=True)
+    env.filters["marked"] = routes.marked
 
     for template in TEMPLATES:
         env.get_template(template.name)

@@ -12,6 +12,11 @@ learning" (JM-42, shown only when the insights were computed); the candidate's s
 abbreviations were read and what was not recognised; all matches; plain notes on data
 quality; how the fit is scored.
 
+Skill names (JM-46): ``build_report(response, names)`` takes a mapping from concept id to the
+skill's Ukrainian name. A skill found in it is printed in Ukrainian, any other keeps its standard
+English name; the sentences around the names stay English. A sentence that holds Ukrainian names
+is a ``Line``: a plain string that also lists them, so the page can mark them ``lang="uk"``.
+
 Wording rules: sentences in sentence case, numbers as digits, singular and plural handled,
 nothing about the system's internals. Warnings use the fixed ``detail`` sentences of the
 response, which never contain CV text.
@@ -20,6 +25,7 @@ response, which never contain CV text.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
@@ -40,6 +46,41 @@ BAND_LABELS = {
 }
 NO_JOBS = "There are no jobs to compare with your CV yet. Try again later."
 NO_REQUIRED = "This job lists no required skills, so your skills could not be compared."
+
+
+class Line(str):
+    """A sentence that is a plain string and also knows which Ukrainian skill names it holds.
+    It compares and prints as the string; only ``uk`` is extra (empty for English output)."""
+
+    uk: tuple[str, ...]
+
+    def __new__(cls, text: str, uk: tuple[str, ...] = ()) -> Line:
+        line = super().__new__(cls, text)
+        line.uk = uk
+        return line
+
+
+class _Labels:
+    """How a skill is named on this page: in Ukrainian where a name is known, else as before."""
+
+    def __init__(self, names: Mapping[str, str] | None) -> None:
+        self._names = names or {}
+
+    def name(self, skill: SkillOut) -> str:
+        return self._ukrainian(skill) or skill.label or skill.name
+
+    def _ukrainian(self, skill: SkillOut) -> str | None:
+        return self._names.get(skill.concept_id) if skill.concept_id else None
+
+    def is_ukrainian(self, skill: SkillOut) -> bool:
+        """True when ``name`` is a Ukrainian name that differs from the English label (a name that
+        is the same word in both, such as "Python", is not marked)."""
+        translated = self._ukrainian(skill)
+        return bool(translated) and translated.casefold() != (skill.label or "").casefold()
+
+    def line(self, text: str, skills: list[SkillOut]) -> Line:
+        """``text``, a sentence naming ``skills``, listing the Ukrainian names among them."""
+        return Line(text, tuple(self.name(s) for s in skills if self.is_ukrainian(s)))
 
 
 @dataclass(frozen=True)
@@ -72,6 +113,7 @@ class Job:
 class SkillLine:
     label: str
     unsure: bool
+    uk: bool = False  # the label is a Ukrainian name (JM-46)
 
 
 @dataclass(frozen=True)
@@ -90,8 +132,9 @@ class Report:
     empty: str | None = None
 
 
-def build_report(response: AnalysisResponse) -> Report:
-    jobs = [_job(m) for m in response.matches]
+def build_report(response: AnalysisResponse, names: Mapping[str, str] | None = None) -> Report:
+    labels = _Labels(names)
+    jobs = [_job(m, labels) for m in response.matches]
     by_id = {m.vacancy.id: m for m in response.matches}
     skills = _unique_skills(response.profile.skills)
     return Report(
@@ -99,10 +142,11 @@ def build_report(response: AnalysisResponse) -> Report:
         figures=_figures(response, skills),
         best=jobs[:BEST_COUNT],
         rest=jobs,
-        reach=_reach(response, by_id),
-        learn=_learn(response),
-        skills=[SkillLine(s.label or s.name, s.low_confidence) for s in skills if s.recognised],
-        readings=_readings(skills),
+        reach=_reach(response, by_id, labels),
+        learn=_learn(response, labels),
+        skills=[SkillLine(labels.name(s), s.low_confidence, labels.is_ukrainian(s))
+                for s in skills if s.recognised],
+        readings=_readings(skills, labels),
         unrecognised=[s.name for s in skills if not s.recognised],
         notes=_notes(response),
         scoring=_scoring(response),
@@ -164,15 +208,15 @@ def _duration(months: int) -> str:
     return f"{plural(years, 'year')} {plural(rest, 'month')}"
 
 
-def _job(match: MatchOut) -> Job:
+def _job(match: MatchOut, labels: _Labels) -> Job:
     required, vacancy = match.required, match.vacancy
-    missing = [_name(s) for s in required.missing]
-    shown = missing[:MAX_MISSING_SHOWN]
-    hidden = len(missing) - len(shown)
+    shown_skills = required.missing[:MAX_MISSING_SHOWN]
+    shown = [labels.name(s) for s in shown_skills]
+    hidden = len(required.missing) - len(shown)
     missing_text = None
     if shown:
         extra = f" and {hidden} more" if hidden else ""
-        missing_text = f"Missing: {', '.join(shown)}{extra}."
+        missing_text = labels.line(f"Missing: {', '.join(shown)}{extra}.", shown_skills)
     nice = match.preferred
     return Job(
         rank=match.rank,
@@ -209,10 +253,6 @@ def _segments(have: int, total: int) -> tuple[bool, ...]:
     return (True,) * filled + (False,) * (MAX_SEGMENTS - filled)
 
 
-def _name(skill: SkillOut) -> str:
-    return skill.label or skill.name
-
-
 def _unique_skills(skills: list[SkillOut]) -> list[SkillOut]:
     """One entry per skill: recognised ones by concept, the others by their written name."""
     seen: set[str] = set()
@@ -225,16 +265,18 @@ def _unique_skills(skills: list[SkillOut]) -> list[SkillOut]:
     return unique
 
 
-def _readings(skills: list[SkillOut]) -> list[str]:
+def _readings(skills: list[SkillOut], labels: _Labels) -> list[str]:
     """Skills written differently from their standard name: "JS was read as JavaScript"."""
     lines = []
     for skill in skills:
-        if skill.recognised and skill.label and skill.name.strip().lower() != skill.label.lower():
-            lines.append(f"{skill.name.strip()} was read as {skill.label}.")
+        shown = labels.name(skill)
+        if skill.recognised and skill.label and skill.name.strip().lower() != shown.lower():
+            lines.append(labels.line(f"{skill.name.strip()} was read as {shown}.", [skill]))
     return lines
 
 
-def _reach(response: AnalysisResponse, matches: dict[str, MatchOut]) -> list[str]:
+def _reach(response: AnalysisResponse, matches: dict[str, MatchOut],
+           labels: _Labels) -> list[str]:
     if not response.insights.computed:
         return []
     lines = []
@@ -242,17 +284,19 @@ def _reach(response: AnalysisResponse, matches: dict[str, MatchOut]) -> list[str
         match = matches.get(item.vacancy_id)
         if match is None or not item.missing:
             continue
-        names = " and ".join(_name(s) for s in item.missing)
+        names = " and ".join(labels.name(s) for s in item.missing)
         where = f" at {match.vacancy.company}" if match.vacancy.company else ""
-        lines.append(f"{match.vacancy.title}{where}: add {names} to reach a strong match.")
+        lines.append(labels.line(
+            f"{match.vacancy.title}{where}: add {names} to reach a strong match.", item.missing))
     return lines
 
 
-def _learn(response: AnalysisResponse) -> list[str]:
+def _learn(response: AnalysisResponse, labels: _Labels) -> list[str]:
     if not response.insights.computed:
         return []
     return [
-        f"{_name(item.skill)}: would make {plural(item.unlocks, 'more job')} a strong match."
+        labels.line(f"{labels.name(item.skill)}: would make "
+                    f"{plural(item.unlocks, 'more job')} a strong match.", [item.skill])
         for item in response.insights.skills_to_learn
     ]
 

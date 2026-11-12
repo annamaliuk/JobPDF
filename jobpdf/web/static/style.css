@@ -119,6 +119,19 @@ input[type="file"]::file-selector-button {
   cursor: pointer;
 }
 
+label.field { margin-top: 1.25rem; }
+select {
+  display: block;
+  min-width: 12rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 1rem;
+}
+
 button, .button {
   display: inline-block;
   margin-top: 1rem;

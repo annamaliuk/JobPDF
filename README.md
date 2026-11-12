@@ -297,6 +297,14 @@ table, notes on data quality and how the fit is scored. Close the page and it is
   pass chunks on as they arrive: Caddy does with `flush_interval -1` (in `docker/Caddyfile`);
   another proxy needs the same (for nginx `proxy_buffering off`; the app also sends
   `X-Accel-Buffering: no`).
+- **Skill names in English or Ukrainian.** The upload form has a "Skill names in the report"
+  choice (Ukrainian is preselected when the browser's first language is Ukrainian). With
+  Ukrainian every skill is shown by ESCO's Ukrainian name, read once from the skill index
+  (`taxonomy_alias` rows with `lang = 'uk'` and `alias_kind = 'preferred'`, so the index must have
+  been built with `uk`, which is the default; no migration, no rebuild). A skill without a
+  Ukrainian name keeps its English one, and if the index cannot be read the report is made in
+  English. Only the skill names change: the sentences, headings, job titles and the JSON API stay
+  as they are. Names are marked `lang="uk"` so screen readers pronounce them correctly.
 - **One page may make requests.** `GET /` is sent with `connect-src 'self'` so its script can
   post to `/report`; every other page keeps `connect-src 'none'`.
 - The page is in English. It is not part of the JSON API: `/docs` does not list it.
