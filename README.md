@@ -305,6 +305,27 @@ table, notes on data quality and how the fit is scored. Close the page and it is
   Ukrainian name keeps its English one, and if the index cannot be read the report is made in
   English. Only the skill names change: the sentences, headings, job titles and the JSON API stay
   as they are. Names are marked `lang="uk"` so screen readers pronounce them correctly.
+- **Hide on-site jobs outside your country.** The upload form has a "Hide on-site jobs outside"
+  choice; it starts at "Don't hide any jobs" and is never guessed from the browser. With a
+  country chosen, vacancies that are on site or hybrid in another country are left out of the
+  list and the report says how many ("3 on-site or hybrid postings outside Ukraine left out, as
+  you asked."). Remote jobs always stay. The country is the one you choose, not one read from the
+  CV. The choice is not stored and is not logged.
+  How a vacancy is judged: when it is ingested the work mode (remote, hybrid or on site) and the
+  country are worked out from the source's flag, the title, location, tags and the start of the
+  description (`jobpdf/ingestion/work_place.py`, `jobpdf/places.py`). When anything is unknown
+  (no mode, no country, a place that could be in two countries such as "Georgia" or "CA") the
+  vacancy is **kept**; showing a job you may not be able to take is better than hiding one you can.
+  Adzuna and Jooble give no remote flag, so for them "on site" is inferred from a real place and
+  no mention of remote work, which is a guess; Arbeitnow and The Muse give a flag, Remotive is
+  all remote. The place list is small (94 countries and the largest cities), so a posting in a
+  small town without a country is kept.
+  The new fields (`work_mode`, `country`) are part of the stored vacancy, and the ingestion
+  version in `jobpdf/ingestion/store.py` (`HASH_VERSION`) was raised to 2: **after deploying,
+  every stored vacancy is re-processed once** by the normal ingest runs (at most 200
+  postings per run, newest first, so a large table needs several runs), and until a vacancy is re-processed it has no
+  work mode and is never hidden. The JSON API is unchanged except that its response now has
+  `hidden_reasons` (`{}` unless something was hidden); it has no country parameter.
 - **One page may make requests.** `GET /` is sent with `connect-src 'self'` so its script can
   post to `/report`; every other page keeps `connect-src 'none'`.
 - The page is in English. It is not part of the JSON API: `/docs` does not list it.
