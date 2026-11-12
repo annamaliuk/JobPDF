@@ -1,5 +1,5 @@
-"""JM-43: the page's files must agree with each other and with the rules the page promises
-(nothing inline, nothing from another site, no request from the script)."""
+"""JM-43/JM-44: the page's files must agree with each other and with the rules the page promises
+(nothing inline, nothing from another site, one request from the script: the form's own post)."""
 
 import re
 import shutil
@@ -55,11 +55,46 @@ def test_nothing_loads_from_another_site(path) -> None:
     assert "@import" not in text and "url(http" not in text.replace(" ", "")
 
 
-def test_the_script_makes_no_requests_and_keeps_nothing() -> None:
-    for word in ("fetch(", "XMLHttpRequest", "sendBeacon", "WebSocket", "EventSource",
+def test_the_script_keeps_nothing_and_asks_nothing_but_the_form_post() -> None:
+    for word in ("XMLHttpRequest", "sendBeacon", "WebSocket", "EventSource",
                  "localStorage", "sessionStorage", "indexedDB", "document.cookie", "eval(",
                  "innerHTML", "new Function", "import("):
         assert word not in JS, word
+    assert JS.count("fetch(") == 1  # the one request: the form's own post (JM-44)
+    call = JS.split("fetch(", 1)[1].split("})", 1)[0]
+    assert call.startswith("form.action,") and 'method: "POST"' in call
+    assert 'Accept: "text/event-stream"' in call and 'credentials: "omit"' in call
+
+
+def test_the_script_puts_a_finished_page_in_as_parsed_data() -> None:
+    assert "new DOMParser().parseFromString(" in JS and "adoptNode(" in JS
+    assert "document.write" not in JS and "insertAdjacentHTML" not in JS
+
+
+def test_every_step_the_script_can_be_told_about_is_a_step_of_the_page() -> None:
+    from jobpdf.web import progress
+
+    html = routes._templates.get_template("index.html").render(
+        steps=progress.STEPS, max_bytes=1, field="file", path="/report")
+
+    assert re.findall(r'data-step="([a-z]+)"', html) == list(progress.STEP_IDS)
+    assert 'data-state="waiting"' in html  # every step starts plain; the script sets the others
+    for state in ("waiting", "active", "done"):
+        assert f"{state}:" in JS, state
+    for state in ("active", "done"):
+        assert re.search(rf'\.step\[data-state="{state}"\]', CSS), state
+    for element in ("progress", "progress-heading", "progress-note", "progress-retry", "elapsed",
+                    "slow"):
+        assert f'id="{element}"' in html and f'"{element}"' in JS, element
+
+
+def test_the_stylesheet_loads_no_image_the_content_security_policy_would_refuse() -> None:
+    assert "url(" not in CSS.replace(" ", "")  # img-src is 'self': a data: image is blocked
+
+
+def test_the_steps_are_not_told_by_colour_or_motion_alone() -> None:
+    assert re.search(r"\.step\s+\.state", CSS)  # each step also says Waiting / In progress / Done
+    assert "prefers-reduced-motion" in CSS
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -162,3 +197,10 @@ def test_the_readme_limits_match_the_code() -> None:
     from jobpdf.api.access import IP_LIMITS
 
     assert [(r.limit, r.seconds) for r in IP_LIMITS] == [(5, 3600), (20, 86400)]
+
+
+def test_the_proxy_passes_the_progress_stream_on_as_it_arrives() -> None:
+    caddyfile = (ROOT / "docker" / "Caddyfile").read_text(encoding="utf-8")
+    block = caddyfile.split("reverse_proxy app:8000", 1)[1]
+
+    assert re.search(r"^\s*flush_interval -1\s*$", block, re.M)

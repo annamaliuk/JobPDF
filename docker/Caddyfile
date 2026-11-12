@@ -10,6 +10,10 @@
 	}
 
 	reverse_proxy app:8000 {
+		# Send each chunk of the progress stream (JM-44) to the browser as it arrives, instead of
+		# collecting it; without this the steps would all appear at once, when the report is done.
+		flush_interval -1
+
 		# A cold analysis can take most of the 30 s target; give it room.
 		transport http {
 			response_header_timeout 90s

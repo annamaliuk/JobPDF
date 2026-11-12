@@ -1,4 +1,4 @@
-/* JobPDF web page (JM-43). One stylesheet, no web fonts, nothing loaded from another site.
+/* JobPDF web page (JM-43, progress steps JM-44). One stylesheet, no web fonts, nothing loaded from another site.
    The one distinctive element is the skill meter: one segment per required skill, filled when
    the CV has it, outlined and dashed when it does not. Meaning never rests on colour alone. */
 
@@ -136,6 +136,66 @@ button, .button {
 button:disabled { opacity: 0.55; cursor: progress; }
 .status { min-height: 1.6rem; margin-top: 0.75rem; font-family: var(--sans); font-size: 0.9375rem; }
 .status.problem { color: var(--amber); font-weight: 600; }
+
+/* progress steps (JM-44): the state is a word, the mark only repeats it */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.progress[hidden], .idle[hidden], #slow[hidden], #progress-retry[hidden] { display: none; }
+.steps { list-style: none; margin: 1.75rem 0 1.25rem; padding: 0; max-width: 40rem; }
+.step {
+  display: grid;
+  grid-template-columns: 1.75rem 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line);
+  font-family: var(--sans);
+}
+.step:last-child { border-bottom: 1px solid var(--line); }
+.step .state { color: var(--muted); font-size: 0.9375rem; }
+.step .mark {
+  box-sizing: border-box;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px dashed var(--muted);
+  border-radius: 50%;
+}
+.step[data-state="active"] { font-weight: 700; }
+.step[data-state="active"] .state { color: var(--cobalt); }
+.step[data-state="active"] .mark {
+  border: 3px solid var(--line);
+  border-top-color: var(--cobalt);
+  animation: turn 1s linear infinite;
+}
+.step[data-state="done"] .mark {
+  position: relative;
+  border: 2px solid var(--cobalt);
+  background: var(--cobalt);
+}
+/* the tick is drawn with borders: the page's image rule (img-src 'self') refuses data: images */
+.step[data-state="done"] .mark::after {
+  content: "";
+  position: absolute;
+  left: 0.3rem;
+  top: 0.05rem;
+  width: 0.3rem;
+  height: 0.6rem;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.step[data-state="done"] .state { color: var(--ink); }
+.elapsed { font-family: var(--sans); font-size: 0.9375rem; color: var(--muted); }
+@keyframes turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .step[data-state="active"] .mark { animation: none; border-top-color: var(--cobalt); border-right-color: var(--cobalt); }
+}
 
 /* figures: a strip, not cards */
 .figures { display: flex; flex-wrap: wrap; gap: 1rem 2.5rem; margin: 1.75rem 0 0; padding: 0; }

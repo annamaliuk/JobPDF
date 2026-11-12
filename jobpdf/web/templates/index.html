@@ -1,7 +1,24 @@
 {% extends "base.html" %}
 {% block title %}JobPDF: see which remote jobs fit your CV{% endblock %}
 {% block main %}
-<section class="intro">
+<section id="progress" class="progress" aria-labelledby="progress-heading" hidden>
+  <h1 id="progress-heading" tabindex="-1">Reading your CV</h1>
+  <ol class="steps">
+{% for step in steps %}
+    <li class="step" data-step="{{ step.id }}" data-state="waiting">
+      <span class="mark" aria-hidden="true"></span>
+      <span class="label">{{ step.label }}</span>
+      <span class="state">Waiting</span>
+    </li>
+{% endfor %}
+  </ol>
+  <p class="elapsed" aria-hidden="true"><span id="elapsed">0</span> s. This usually takes 10 to 30 seconds. Keep this page open.</p>
+  <p id="slow" class="quiet" hidden>This is taking longer than usual. It is still working.</p>
+  <p id="progress-note" class="visually-hidden" role="status" aria-live="polite"></p>
+  <p id="progress-retry" hidden><a class="button" href="/">Try another file</a></p>
+</section>
+
+<section class="intro idle">
   <h1>See which remote jobs fit your CV</h1>
   <p class="lead">Upload your CV. You get current remote jobs ranked by how well your skills and
     experience fit, with the skills you have and the ones you are missing for each.</p>
@@ -16,7 +33,7 @@
   </form>
 </section>
 
-<section class="example" aria-labelledby="example-heading">
+<section class="example idle" aria-labelledby="example-heading">
   <h2 id="example-heading">What the report shows</h2>
   <p>Each job gets a row. The meter has one segment for every skill the job requires. A filled
     segment is a skill you have; an outlined one is a skill you are missing.</p>
@@ -37,7 +54,7 @@
   </ol>
 </section>
 
-<section class="privacy" aria-labelledby="privacy-heading">
+<section class="privacy idle" aria-labelledby="privacy-heading">
   <h2 id="privacy-heading">What happens to your CV</h2>
   <p>The file is read in memory, turned into a list of skills and experience, and deleted. Nothing
     from it is stored on our side.</p>

@@ -264,8 +264,10 @@ Other endpoints:
 ### The web page
 
 Open the site's address in a browser (`https://<DOMAIN>/`, or `https://localhost/` locally).
-Choose a PDF or DOCX of at most 5 MB and press the button; the report appears on the next
-page: the figures from the CV, the best matches with "You have 7 of 9 required skills" and
+Choose a PDF or DOCX of at most 5 MB and press the button; while the CV is read the page lists
+five steps (reading the file, finding skills, matching them to the standard list, comparing with
+current jobs, building the report) and marks each as waiting, in progress or done. Then the report
+appears: the figures from the CV, the best matches with "You have 7 of 9 required skills" and
 what is missing, the skills that were found and how abbreviations were read, every match in a
 table, notes on data quality and how the fit is scored. Close the page and it is gone.
 
@@ -285,8 +287,19 @@ table, notes on data quality and how the fit is scored. Close the page and it is
   Content-Security-Policy that forbids inline scripts and anything from other sites, and
   `X-Frame-Options: DENY`. Text from a CV or a vacancy is escaped, and a vacancy's link is
   shown only if it is an http(s) address.
-- The page is in English. It does not show a progress bar (the browser waits for the report),
-  and it is not part of the JSON API: `/docs` does not list it.
+- **Progress steps without storing anything.** The script posts the CV itself with
+  `Accept: text/event-stream`, and the same request answers with short events (`step`, then
+  `done` or `failed` with the finished page, and a `: keep-alive` comment every 10 seconds). There
+  is no job id and no result kept for later; the analysis runs in a thread of the same process.
+  If the person closes the page the analysis still finishes, its result is dropped and its slot
+  is given back. A step event holds only a step name. Without JavaScript, or in a browser that
+  cannot stream, the form posts as before and the browser waits for the report. The proxy must
+  pass chunks on as they arrive: Caddy does with `flush_interval -1` (in `docker/Caddyfile`);
+  another proxy needs the same (for nginx `proxy_buffering off`; the app also sends
+  `X-Accel-Buffering: no`).
+- **One page may make requests.** `GET /` is sent with `connect-src 'self'` so its script can
+  post to `/report`; every other page keeps `connect-src 'none'`.
+- The page is in English. It is not part of the JSON API: `/docs` does not list it.
 
 ---
 

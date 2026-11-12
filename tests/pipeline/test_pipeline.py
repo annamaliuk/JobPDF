@@ -50,6 +50,46 @@ def test_a_pdf_goes_through_every_stage() -> None:
     assert set(result.timings_ms) == {*pipeline.STAGES, "total"}
 
 
+def test_each_stage_is_announced_before_it_starts_in_order() -> None:
+    seen: list[str] = []
+
+    run(on_stage=seen.append)
+
+    assert seen == list(pipeline.STAGES)
+
+
+def test_a_stage_is_announced_before_its_work_not_after(monkeypatch) -> None:
+    seen: list[str] = []
+
+    def stop(*args, **kwargs):
+        raise PipelineError("normalization", "boom")
+
+    monkeypatch.setattr(pipeline, "get_normalization_service", stop, raising=False)
+    with pytest.raises(PipelineError):
+        run(on_stage=seen.append, normalizer=None)
+
+    assert seen[-1] == "normalization" and "embedding" not in seen
+
+
+def test_a_failing_progress_callback_never_stops_the_analysis(caplog) -> None:
+    def broken(stage):
+        raise RuntimeError(f"boom {SECRETS[0]}")
+
+    with caplog.at_level(logging.WARNING):
+        result = run(on_stage=broken)
+
+    assert [r.vacancy.id for r in result.ranking.results][0] == "both"
+    assert SECRETS[0] not in caplog.text and "progress callback failed" in caplog.text
+
+
+def test_the_analysis_is_the_same_with_or_without_a_progress_callback() -> None:
+    plain, watched = run(), run(on_stage=lambda stage: None)
+
+    assert [r.vacancy.id for r in plain.ranking.results] == [
+        r.vacancy.id for r in watched.ranking.results]
+    assert plain.candidate_skills.keys == watched.candidate_skills.keys
+
+
 def test_the_result_says_what_produced_it() -> None:
     versions = run().versions
 
