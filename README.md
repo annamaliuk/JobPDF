@@ -305,11 +305,15 @@ table, notes on data quality and how the fit is scored. Close the page and it is
   Ukrainian name keeps its English one, and if the index cannot be read the report is made in
   English. Only the skill names change: the sentences, headings, job titles and the JSON API stay
   as they are. Names are marked `lang="uk"` so screen readers pronounce them correctly.
-- **Hide on-site jobs outside your country.** The upload form has a "Hide on-site jobs outside"
+- **Hide jobs that need you in another country.** The upload form has a "Where do you live?"
   choice; it starts at "Don't hide any jobs" and is never guessed from the browser. With a
   country chosen, vacancies that are on site or hybrid in another country are left out of the
   list and the report says how many ("3 on-site or hybrid postings outside Ukraine left out, as
-  you asked."). Remote jobs always stay. The country is the one you choose, not one read from the
+  you asked."). So are remote vacancies whose place text limits them to other countries or
+  regions ("USA only", "EU only", "LATAM"), read by `allowed_countries` in `jobpdf/places.py`.
+  Every part of that text must be a known country, state or region ("Europe" includes Ukraine;
+  "EU" and "EEA" do not); an open word ("Worldwide"), a time zone or any unknown word keeps the
+  job. Other remote jobs stay. The country is the one you choose, not one read from the
   CV. The choice is not stored and is not logged.
   How a vacancy is judged: when it is ingested the work mode (remote, hybrid or on site) and the
   country are worked out from the source's flag, the title, location, tags and the start of the
@@ -326,6 +330,11 @@ table, notes on data quality and how the fit is scored. Close the page and it is
   postings per run, newest first, so a large table needs several runs), and until a vacancy is re-processed it has no
   work mode and is never hidden. The JSON API is unchanged except that its response now has
   `hidden_reasons` (`{}` unless something was hidden); it has no country parameter.
+- **Experience check.** A vacancy that asks for at least 2.5 years more experience than the CV
+  shows (`EXPERIENCE_MARGIN_MONTHS` in `jobpdf/ranking/eligibility.py`) is at most a partial
+  match; it is never hidden for this, and its card says why. A CV with no jobs counts as 0
+  months. When a job in the CV has a date that could not be counted, the total would be too
+  low, so no vacancy is capped. This applies to the web page and the JSON API alike.
 - **One page may make requests.** `GET /` is sent with `connect-src 'self'` so its script can
   post to `/report`; every other page keeps `connect-src 'none'`.
 - The page is in English. It is not part of the JSON API: `/docs` does not list it.

@@ -12,6 +12,11 @@ province, a UK nation, and last the largest cities ("London"). A two-letter code
 when it is written in capitals and is not also a US state.
 
 Codes are ISO 3166-1 alpha-2. ``COUNTRY_NAMES`` is the list the web form offers.
+
+``allowed_countries("USA, Canada")`` -> ``{"US", "CA"}`` (JM-47) reads the place a remote job is
+open to: every part must be a country, a US state or province, or a region ("Europe", "EU",
+"LATAM"). One part it does not know, or an open word ("Worldwide"), and the answer is ``None``.
+"Europe" includes Ukraine; "EU" and "EEA" do not.
 """
 
 from __future__ import annotations
@@ -260,3 +265,44 @@ def _resolve_part(part: str) -> str | None:
             return part
         return None
     return _CITY_WORDS.get(folded)
+
+
+# Regions a remote posting may be limited to (JM-47), as codes from the list above. A word not
+# here (a time zone, "CIS") is unknown, and an unknown part means the job is never hidden.
+_EU = "AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE"
+_EUROPE = f"{_EU} AL BA BY CH GB IS MD ME MK NO RS RU UA"
+_LATAM = "AR BR CL CO CR DO EC MX PA PE UY VE"
+_APAC = "AU BD CN HK ID IN JP KR LK MY NZ PH PK SG TH TW VN"
+_REGIONS = {
+    "europe": _EUROPE,
+    "eu": _EU, "european union": _EU,
+    "eea": f"{_EU} IS NO",
+    "emea": f"{_EUROPE} AE AM AZ BH DZ EG GE GH IL JO KE KW LB MA NG OM QA SA TN TR ZA",
+    "north america": "US CA MX",
+    "latam": _LATAM, "latin america": _LATAM,
+    "south america": "AR BR CL CO EC PE UY VE",
+    "americas": f"US CA {_LATAM}",
+    "apac": _APAC, "asia pacific": _APAC,
+}
+_REGION_SETS = {word: frozenset(codes.split()) for word, codes in _REGIONS.items()}
+_OPEN = frozenset({"worldwide", "anywhere", "global", "anywhere in the world"})
+_ONLY = re.compile(r"\b(?:only|based)\b", re.I)
+
+
+def allowed_countries(text: str | None) -> frozenset[str] | None:
+    """The countries ``text`` limits a remote job to; None when it is open, empty or unsure."""
+    allowed: set[str] = set()
+    for part in _PART_SPLIT.split(text or ""):
+        part = _ONLY.sub(" ", part).strip(" -")
+        folded = _fold(part)
+        if folded in ("", "remote"):
+            continue
+        if folded in _OPEN:
+            return None
+        if folded in _REGION_SETS:
+            allowed |= _REGION_SETS[folded]
+        elif code := _resolve_part(part):
+            allowed.add(code)
+        else:
+            return None
+    return frozenset(allowed) or None

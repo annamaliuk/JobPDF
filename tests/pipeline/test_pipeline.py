@@ -13,6 +13,7 @@ from jobpdf.pipeline import (
     PipelineError,
     classify_extraction_warning,
 )
+from jobpdf.ranking.eligibility import EXPERIENCE_SHORT
 from jobpdf.ranking.score import LinearScorer, VacancyAdjustment
 from tests.pipeline.fakes import (
     PYTHON,
@@ -500,3 +501,35 @@ def test_quotes_are_grounded_against_the_text_the_llm_saw() -> None:
 
     assert result.grounding.counts[GroundingStatus.UNGROUNDED] == 0
     assert not any(w.stage == "grounding" for w in result.warnings)
+
+
+# --- JM-47: the experience check ---------------------------------------------------------------
+
+
+def asking(years: int) -> list:
+    return [v.model_copy(update={"min_years_experience": years}) if v.id == "both" else v
+            for v in VACANCIES]
+
+
+def reasons_of(result, vid: str) -> list[str]:
+    fit = next(r for r in [*result.ranking.results, *result.ranking.hidden] if r.vacancy.id == vid)
+    return fit.adjustment_reasons
+
+
+def test_a_job_asking_for_clearly_more_years_than_the_cv_shows_is_capped() -> None:
+    # The fixture CV has one job, 2021 to 2024: 48 months.
+    assert reasons_of(run(vacancies=asking(7)), "both") == [EXPERIENCE_SHORT]  # 3 years short
+    assert reasons_of(run(vacancies=asking(6)), "both") == []  # 2 years short
+
+
+def test_a_job_without_dates_switches_the_experience_check_off() -> None:
+    undated = extracted(experience=[{**extracted()["experience"][0], "end": None}])
+
+    assert reasons_of(run(vacancies=asking(30), caller=caller(reply(undated))), "both") == []
+
+
+def test_a_cv_without_jobs_counts_as_no_experience() -> None:
+    no_jobs = extracted(experience=[])
+
+    assert reasons_of(run(vacancies=asking(3), caller=caller(reply(no_jobs))), "both") == [
+        EXPERIENCE_SHORT]
