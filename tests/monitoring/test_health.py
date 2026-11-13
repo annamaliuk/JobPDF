@@ -323,7 +323,7 @@ def test_a_failing_status_call_is_check_failed_not_a_crash(caplog) -> None:
 
     assert report.checks["normalization"].code == "check_failed"
     assert report.checks["normalization"].status == "degraded"
-    assert report.versions["taxonomy"] is None and report.versions["ranking"] == "1"
+    assert report.versions["taxonomy"] is None and report.versions["ranking"] == "2"
     assert "ZeroDivisionError" in caplog.text and "division" not in caplog.text
 
 
@@ -467,7 +467,7 @@ def test_an_unreadable_ledger_gives_no_request_count(tmp_path) -> None:
 def test_versions_come_from_the_code_and_the_normalization_service() -> None:
     versions = run(normalizer=FakeNormalizer()).versions
 
-    assert versions["ranking"] == "1" and versions["response_schema"] == "1"
+    assert versions["ranking"] == "2" and versions["response_schema"] == "1"
     assert versions["embedding"].startswith("intfloat/multilingual-e5-small@")
     assert (versions["taxonomy"], versions["index"], versions["matcher_prompt"]) == (
         "v1.2.1", "idx1", "p1")

@@ -331,10 +331,17 @@ table, notes on data quality and how the fit is scored. Close the page and it is
   work mode and is never hidden. The JSON API is unchanged except that its response now has
   `hidden_reasons` (`{}` unless something was hidden); it has no country parameter.
 - **Experience check.** A vacancy that asks for at least 2.5 years more experience than the CV
-  shows (`EXPERIENCE_MARGIN_MONTHS` in `jobpdf/ranking/eligibility.py`) is at most a partial
+  shows (`EXPERIENCE_MARGIN_MONTHS` in `jobpdf/ranking/score.py`) is at most a partial
   match; it is never hidden for this, and its card says why. A CV with no jobs counts as 0
   months. When a job in the CV has a date that could not be counted, the total would be too
   low, so no vacancy is capped. This applies to the web page and the JSON API alike.
+- **Experience in the fit.** When a vacancy states the years it wants, 10% of its fit
+  (`W_EXPERIENCE`) is how close the CV comes: 1 when it has them, falling in a straight line to
+  0 at 2.5 years short. Skills and past work share the rest 7:3, so a vacancy that states no
+  years (or a CV whose months could not be counted) gets the same fit as before. It only
+  reorders jobs inside a band. Each match's `components` now has `experience`, `scoring.weights`
+  has `"experience"`, and the ranking version is 2. Location is not part of the fit: it is the
+  hide rule above.
 - **One page may make requests.** `GET /` is sent with `connect-src 'self'` so its script can
   post to `/report`; every other page keeps `connect-src 'none'`.
 - The page is in English. It is not part of the JSON API: `/docs` does not list it.

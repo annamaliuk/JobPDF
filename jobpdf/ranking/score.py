@@ -1,6 +1,7 @@
 """Combined fit score, bands and ranking (JM-24).
 
-fit = W_SKILL x skill overlap + W_SEMANTIC x semantic similarity, and a band
+fit = W_SKILL x skill overlap + W_SEMANTIC x semantic similarity, with W_EXPERIENCE of it
+for having the years the vacancy asks for when it states them (JM-50), and a band
 (strong / partial / weak / unscored) from required-skill coverage plus a semantic
 minimum. Every number that produces a result is kept on it, so the report (JM-41)
 can explain the formula exactly. Two hooks for later tickets: per-vacancy
@@ -39,6 +40,10 @@ W_SEMANTIC = 0.3
 STRONG_COVERAGE = 0.8  # share of required skills for "strong"
 PARTIAL_COVERAGE = 0.5  # share of required skills for "partial"
 SEM_MIN = 0.3  # on JM-23's calibrated 0..1 scale
+# JM-50: the share of the fit for having the years a vacancy asks for, when it states them.
+# Skill and semantic split the rest 7:3, so a vacancy that states none keeps its old fit.
+W_EXPERIENCE = 0.1
+EXPERIENCE_MARGIN_MONTHS = 30  # this far short: the experience part is 0 (JM-47 caps the band)
 
 # Warning codes on a FitResult.
 SEMANTIC_MISSING = "semantic_missing"
@@ -83,6 +88,7 @@ class FitComponents(_Frozen):
     required_coverage: float | None  # SkillOverlap.required_coverage
     semantic: float | None  # SemanticScore.score (calibrated 0..1)
     semantic_raw: float | None  # SemanticScore.raw (cosine)
+    experience: float | None = None  # experience_fit
 
 
 class VacancyAdjustment(_Frozen):
@@ -101,27 +107,43 @@ class Scorer(Protocol):
     def score(self, components: FitComponents) -> float | None: ...
 
 
+def experience_fit(min_years: int | None, months: int | None) -> float | None:
+    """1 when the CV has the years a vacancy asks for, falling in a straight line to 0 at
+    ``EXPERIENCE_MARGIN_MONTHS`` short; None when no years are stated or the months are unknown."""
+    if not min_years or months is None:
+        return None
+    return min(1.0, max(0.0, 1 - (min_years * 12 - months) / EXPERIENCE_MARGIN_MONTHS))
+
+
 class LinearScorer:
-    """W_SKILL x skill + W_SEMANTIC x semantic; a missing part falls back to the other."""
+    """W_SKILL x skill + W_SEMANTIC x semantic, a missing part falling back to the other; a known
+    experience part then takes ``w_experience`` of the fit."""
 
     name = "linear"
 
-    def __init__(self, w_skill: float = W_SKILL, w_semantic: float = W_SEMANTIC) -> None:
+    def __init__(self, w_skill: float = W_SKILL, w_semantic: float = W_SEMANTIC,
+                 w_experience: float = W_EXPERIENCE) -> None:
         _check_weights(w_skill, w_semantic)
+        if not 0 <= w_experience < 1:
+            raise ValueError(f"the experience weight must be in [0, 1), got {w_experience}")
         self.w_skill = w_skill
         self.w_semantic = w_semantic
+        self.w_experience = w_experience
 
     @property
     def weights(self) -> dict[str, float]:
-        return {"skill": self.w_skill, "semantic": self.w_semantic}
+        return {"skill": self.w_skill, "semantic": self.w_semantic,
+                "experience": self.w_experience}
 
     def score(self, components: FitComponents) -> float | None:
         skill, semantic = components.skill, components.semantic
         if skill is not None and semantic is not None:
-            return self.w_skill * skill + self.w_semantic * semantic
-        if skill is not None:
-            return skill
-        return semantic  # None when both are missing
+            fit = self.w_skill * skill + self.w_semantic * semantic
+        else:
+            fit = skill if skill is not None else semantic  # None when both are missing
+        if fit is None or components.experience is None:
+            return fit
+        return (1 - self.w_experience) * fit + self.w_experience * components.experience
 
 
 def fit_warnings(components: FitComponents, fit: float | None) -> list[str]:
@@ -197,7 +219,7 @@ class RankingResult(_Frozen):
     band_counts: dict[Band, int]  # visible results only; every band present
     hidden_count: int
     scorer_name: str
-    weights: dict[str, float]  # e.g. {"skill": 0.7, "semantic": 0.3}
+    weights: dict[str, float]  # e.g. {"skill": 0.7, "semantic": 0.3, "experience": 0.1}
     thresholds: dict[str, float]  # STRONG_COVERAGE, PARTIAL_COVERAGE, SEM_MIN
     semantic_calibrated: bool | None  # None when no semantic scores were computed
     ranking_version: str
@@ -220,6 +242,7 @@ def rank_vacancies(
     scorer: Scorer = _DEFAULT_SCORER,
     *,
     calibration: Calibration | None = None,
+    experience_months: int | None = None,
 ) -> RankingResult:
     """Score, band and sort vacancies for one candidate.
 
@@ -227,6 +250,7 @@ def rank_vacancies(
     works on skills alone. ``adjustments`` is keyed by vacancy id (eligibility
     checks); a hidden vacancy is still fully scored and listed in ``hidden``.
     ``calibration`` is passed to JM-23's semantic_scores (default: its file).
+    ``experience_months`` is the CV's counted experience, None when unknown (JM-50).
     """
     started = time.perf_counter()
     adjustments = adjustments or {}
@@ -243,7 +267,9 @@ def rank_vacancies(
     hidden: list[FitResult] = []
     for vacancy, semantic in zip(vacancies, semantics, strict=True):
         adjustment = adjustments.get(vacancy.id, VacancyAdjustment())
-        result = score_vacancy(candidate_skills, vacancy, semantic, adjustment, scorer)
+        experience = experience_fit(vacancy.min_years_experience, experience_months)
+        result = score_vacancy(candidate_skills, vacancy, semantic, adjustment, scorer,
+                               experience=experience)
         (hidden if adjustment.hidden else visible).append(result)
     visible.sort(key=_sort_key)
     hidden.sort(key=_sort_key)
@@ -275,16 +301,19 @@ def score_vacancy(
     semantic: SemanticScore | None,
     adjustment: VacancyAdjustment,
     scorer: Scorer,
+    *,
+    experience: float | None = None,
 ) -> FitResult:
     """Score and band one vacancy. Public so "what if you learned X" (JM-42) re-scores
-    with exactly the code the ranked cards use: pass the same ``semantic`` to keep the
-    experience part fixed while the candidate's skills change."""
+    with exactly the code the ranked cards use: pass the same ``semantic`` and
+    ``experience`` to keep them fixed while the candidate's skills change."""
     overlap = skill_overlap(candidate_skills, vacancy)
     components = FitComponents(
         skill=overlap.score,
         required_coverage=overlap.required_coverage,
         semantic=semantic.score if semantic is not None else None,
         semantic_raw=semantic.raw if semantic is not None else None,
+        experience=experience,
     )
     fit = scorer.score(components)
     band, band_before_cap = assign_band(overlap, components.semantic, adjustment.band_cap)

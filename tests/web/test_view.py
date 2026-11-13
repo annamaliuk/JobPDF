@@ -314,7 +314,7 @@ def test_notes_use_the_fixed_sentences_and_count_what_was_left_out(response) -> 
 
 def test_the_scoring_text_is_built_from_the_numbers_the_response_carries(response) -> None:
     scoring = response.scoring.model_copy(update={
-        "weights": {"skill": 0.7, "semantic": 0.3},
+        "weights": {"skill": 0.7, "semantic": 0.3, "experience": 0.1},
         "thresholds": {"strong_coverage": 0.8, "partial_coverage": 0.5, "sem_min": 0.3},
         "semantic_calibrated": True})
 
@@ -322,10 +322,12 @@ def test_the_scoring_text_is_built_from_the_numbers_the_response_carries(respons
 
     assert lines[0].startswith("Each job's fit is 70% your skills")
     assert "30% how closely your past work resembles" in lines[0]
-    assert "at least 80% of the required skills" in lines[1] and "at least 50%" in lines[1]
-    assert lines[2] == ("A job that asks for at least 2.5 more years of experience than your CV "
+    assert lines[1] == ("When a job states the years of experience it wants, 10% of its fit is "
+                        "how close your CV comes to them.")
+    assert "at least 80% of the required skills" in lines[2] and "at least 50%" in lines[2]
+    assert lines[3] == ("A job that asks for at least 2.5 more years of experience than your CV "
                         "shows is at most a partial match.")
-    assert len(lines) == 3  # calibrated: no "approximate" note
+    assert len(lines) == 4  # calibrated: no "approximate" note
 
 
 def test_the_scoring_text_copes_with_a_scorer_it_does_not_know(response) -> None:
