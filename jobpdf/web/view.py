@@ -32,13 +32,12 @@ from urllib.parse import urlsplit
 from jobpdf.api.response import AnalysisResponse, MatchOut, SkillOut
 from jobpdf.places import country_name
 from jobpdf.ranking.eligibility import (
-    EXPERIENCE_MARGIN_MONTHS,
     EXPERIENCE_SHORT,
     LOCATION_REASONS,
     ON_SITE_ABROAD,
     REMOTE_OUTSIDE_REGION,
 )
-from jobpdf.ranking.score import Band
+from jobpdf.ranking.score import EXPERIENCE_MARGIN_MONTHS, Band
 
 BEST_COUNT = 5  # matches shown as full rows; the rest are in the table
 MAX_MISSING_SHOWN = 6
@@ -371,6 +370,10 @@ def _scoring(response: AnalysisResponse) -> list[str]:
                  "job's duties."]
     else:
         lines = ["Each job's fit is worked out from your skills and your past work."]
+    years = weights.get("experience")
+    if years:
+        lines.append(f"When a job states the years of experience it wants, {percent(years)} of "
+                     "its fit is how close your CV comes to them.")
     strong, partial = limits.get("strong_coverage"), limits.get("partial_coverage")
     if strong is not None and partial is not None:
         lines.append(

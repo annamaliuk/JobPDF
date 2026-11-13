@@ -238,7 +238,8 @@ def _logistic_fit(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]:
 
 
 class LearnedLinearScorer(LinearScorer):
-    """``LinearScorer`` with fitted weights; a missing part falls back exactly as there."""
+    """``LinearScorer`` with fitted weights; a missing part falls back exactly as there. Only the
+    skill:semantic split is learned; the experience part (JM-50) keeps its fixed share."""
 
     name = "learned_linear"
 

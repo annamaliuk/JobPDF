@@ -109,14 +109,14 @@ def _print(mode: str, report: dict) -> None:
     print(f"mode: {mode}  candidates: {report['n_candidates']}  pairs: {report['n_pairs']}  "
           f"semantic: {'yes' if report['has_semantic'] else 'no'}  "
           f"oracle Spearman: {report['oracle_spearman']}")
-    print(f"\n{'variant':16} {'Spearman [95% CI]':24} {'NDCG@' + str(report['k']):24} "
+    print(f"\n{'variant':18} {'Spearman [95% CI]':24} {'NDCG@' + str(report['k']):24} "
           f"{'band F1':8} {'vs current (paired)':24}")
     for name, v in report["variants"].items():
         diff = v.get("vs_current")
         vs = f"{diff['mean']:+.3f} [{diff['ci95'][0]:+.3f}, {diff['ci95'][1]:+.3f}]" \
             if diff and diff["mean"] is not None else ""
         f1 = f"{v['band_macro_f1']:.3f}" if "band_macro_f1" in v else "-"
-        print(f"{name:16} {_fmt(v['spearman']):24} {_fmt(v['ndcg']):24} {f1:8} {vs}")
+        print(f"{name:18} {_fmt(v['spearman']):24} {_fmt(v['ndcg']):24} {f1:8} {vs}")
     cases = report["variants"][CURRENT]["spearman_by_case"]
     print("\ncurrent, Spearman by case: "
           + ", ".join(f"{c}={m:.3f}" for c, m in cases.items() if m is not None))

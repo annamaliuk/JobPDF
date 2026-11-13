@@ -263,7 +263,8 @@ def analyze_cv(
         months = counted_experience_months(profile, extraction.warnings)
         adjustments = merge_adjustments(adjustments or {},
                                         experience_adjustments(vacancies, months))
-        ranking = rank_vacancies(candidate_skills, vectors, vacancies, adjustments, **options)
+        ranking = rank_vacancies(candidate_skills, vectors, vacancies, adjustments,
+                                 experience_months=months, **options)
     warnings.add_many("ranking", ranking.warnings)
 
     timings["total"] = round((time.perf_counter() - started) * 1000)

@@ -18,6 +18,7 @@ from jobpdf.ranking.score import (
     SKILL_MISSING,
     STRONG_COVERAGE,
     UNSCORED,
+    W_EXPERIENCE,
     W_SEMANTIC,
     W_SKILL,
     Band,
@@ -28,6 +29,7 @@ from jobpdf.ranking.score import (
     VacancyAdjustment,
     _check_weights,
     assign_band,
+    experience_fit,
     fit_warnings,
     rank_vacancies,
 )
@@ -62,7 +64,7 @@ def components(skill=None, semantic=None, coverage=None, raw=None) -> FitCompone
 
 def test_default_weights() -> None:
     assert (W_SKILL, W_SEMANTIC) == (0.7, 0.3)
-    assert LinearScorer().weights == {"skill": 0.7, "semantic": 0.3}
+    assert LinearScorer().weights == {"skill": 0.7, "semantic": 0.3, "experience": 0.1}
     assert LinearScorer.name == "linear"
 
 
@@ -97,6 +99,35 @@ def test_weights_must_be_non_negative_and_add_up_to_one(w_skill, w_semantic) -> 
         LinearScorer(w_skill, w_semantic)
     with pytest.raises(ValueError):
         _check_weights(w_skill, w_semantic)
+
+
+@pytest.mark.parametrize(
+    ("years", "months", "part"),
+    [(3, 48, 1.0), (3, 36, 1.0), (3, 24, 0.6), (5, 36, 0.2), (5, 30, 0.0), (5, 0, 0.0),
+     (None, 36, None), (0, 36, None), (3, None, None)],
+)
+def test_experience_fit(years, months, part) -> None:
+    assert experience_fit(years, months) == (None if part is None else pytest.approx(part))
+
+
+def test_a_known_experience_part_takes_its_share_of_the_fit() -> None:
+    assert W_EXPERIENCE == 0.1
+    scorer = LinearScorer()
+
+    assert scorer.score(FitComponents(skill=0.625, required_coverage=None, semantic=0.4,
+                                      semantic_raw=None, experience=0.6)) == pytest.approx(
+        0.9 * 0.5575 + 0.1 * 0.6)
+    assert scorer.score(FitComponents(skill=0.625, required_coverage=None, semantic=None,
+                                      semantic_raw=None, experience=1.0)) == pytest.approx(
+        0.9 * 0.625 + 0.1)
+    assert scorer.score(FitComponents(skill=None, required_coverage=None, semantic=None,
+                                      semantic_raw=None, experience=1.0)) is None  # unscored
+
+
+@pytest.mark.parametrize("w_experience", [-0.1, 1.0])
+def test_experience_weight_must_be_below_one(w_experience) -> None:
+    with pytest.raises(ValueError, match="experience weight"):
+        LinearScorer(w_experience=w_experience)
 
 
 def test_float_rounding_in_weights_is_accepted() -> None:
@@ -230,7 +261,8 @@ def test_bands_fits_and_order() -> None:
     assert result.band_counts == {Band.STRONG: 1, Band.PARTIAL: 1, Band.WEAK: 1,
                                   Band.UNSCORED: 1}
     assert result.semantic_calibrated is True
-    assert (result.scorer_name, result.weights) == ("linear", {"skill": 0.7, "semantic": 0.3})
+    assert result.scorer_name == "linear"
+    assert result.weights == {"skill": 0.7, "semantic": 0.3, "experience": 0.1}
     assert result.thresholds == {"strong_coverage": 0.8, "partial_coverage": 0.5,
                                  "sem_min": 0.3}
     assert result.ranking_version == RANKING_VERSION == strong.ranking_version
@@ -305,7 +337,24 @@ def test_custom_scorer_changes_order_within_a_band_but_never_bands() -> None:
     assert [r.band for r in default.results] == [Band.PARTIAL] * 2
     assert {r.vacancy.id: r.band for r in reversed_weights.results} == {
         r.vacancy.id: r.band for r in default.results}
-    assert reversed_weights.weights == {"skill": 0.3, "semantic": 0.7}
+    assert reversed_weights.weights == {"skill": 0.3, "semantic": 0.7, "experience": 0.1}
+
+
+def test_experience_orders_jobs_within_a_band_and_never_moves_bands() -> None:
+    def asks(id: str, years: int | None) -> VacancyFeatures:
+        return vac(id, required=[A, D], sem=0.45).model_copy(
+            update={"min_years_experience": years})
+
+    vacancies = [asks("needs-5", 5), asks("needs-2", 2), asks("states-none", None)]
+
+    result = rank(vacancies, experience_months=36)
+    without = rank(vacancies)
+
+    assert ids(result.results) == ["needs-2", "states-none", "needs-5"]
+    assert [r.components.experience for r in result.results] == [1.0, None,
+                                                                  pytest.approx(0.2)]
+    assert [r.band for r in result.results] == [r.band for r in without.results]
+    assert {r.fit for r in without.results} == {result.results[1].fit}  # unchanged when unknown
 
 
 def test_a_scorer_without_weights_is_reported_by_name() -> None:

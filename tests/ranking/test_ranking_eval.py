@@ -25,6 +25,7 @@ from jobpdf.ranking.ranking_eval import (
     ndcg_graded,
     roc_auc,
     run_evaluation,
+    score_pair,
     sign_test_p,
     tfidf_similarities,
     tune,
@@ -128,6 +129,16 @@ def test_product_order_puts_bands_first(perfect) -> None:
     assert result.spearman is not None and result.ndcg is not None
 
 
+def test_the_experience_variant_uses_the_candidates_months(perfect) -> None:
+    asked = [p for p in perfect if p.experience is not None]
+    assert asked and all(0 <= p.experience <= 1 for p in asked)
+    pair = min(asked, key=lambda p: p.experience)
+    fit, _ = score_pair(pair, Variant(CURRENT, W_SKILL))
+    with_experience, _ = score_pair(pair, Variant("current+experience", W_SKILL,
+                                                   use_experience=True))
+    assert with_experience == pytest.approx(0.9 * fit + 0.1 * pair.experience)
+
+
 def test_tune_picks_the_variant_that_wins_on_training_candidates(perfect) -> None:
     groups = by_candidate(perfect)
     held_out, chosen = tune(groups, [Variant(TFIDF, None, False, False),
@@ -183,8 +194,8 @@ def test_a_full_run_with_a_fake_embedder_reports_every_variant(dataset) -> None:
     report = run_evaluation(pairs)
 
     assert report["has_semantic"] and report["semantic_auc"] is not None
-    assert {"current", "skills_only", "semantic_only", "fit_order", "tfidf"} <= set(
-        report["variants"])
+    assert {"current", "current+experience", "skills_only", "semantic_only", "fit_order",
+            "tfidf"} <= set(report["variants"])
     assert report["variants"]["semantic_only"]["spearman"]["mean"] != (
         report["variants"]["skills_only"]["spearman"]["mean"])
     assert report["oracle_spearman"] >= report["variants"]["current"]["spearman"]["mean"]

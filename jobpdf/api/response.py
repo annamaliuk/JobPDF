@@ -176,6 +176,7 @@ class ComponentsOut(_Frozen):
     required_coverage: float | None  # share of required skills the CV has, 0..1
     semantic: float | None  # experience similarity, calibrated 0..1
     semantic_raw: float | None  # cosine before rescaling
+    experience: float | None = None  # how close the CV comes to the years asked for, 0..1
 
 
 class SkillGroupOut(_Frozen):
@@ -415,7 +416,8 @@ def _match(fit: FitResult, rank: int) -> MatchOut:
         components=ComponentsOut(skill=components.skill,
                                  required_coverage=components.required_coverage,
                                  semantic=components.semantic,
-                                 semantic_raw=components.semantic_raw),
+                                 semantic_raw=components.semantic_raw,
+                                 experience=components.experience),
         required=SkillGroupOut(
             matched=[skill_from_ref(r) for r in overlap.required_matched],
             missing=[skill_from_ref(r) for r in overlap.required_missing],
