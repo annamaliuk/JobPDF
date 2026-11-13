@@ -179,6 +179,14 @@ def test_a_job_whose_band_was_lowered_says_so(response) -> None:
     assert job_of(response, capped_from=None).lowered is None
 
 
+def test_a_job_lowered_for_experience_says_why(response) -> None:
+    job = job_of(response, band=Band.PARTIAL, capped_from=Band.STRONG,
+                 adjustment_reasons=["experience_short"])
+
+    assert job.lowered == ("Lowered from strong to partial: the job asks for more years of "
+                           "experience than your CV shows.")
+
+
 @pytest.mark.parametrize("fit, text", [(0.824, "82%"), (0.825, "83%"), (1.0, "100%"),
                                        (0.0, "0%"), (0.005, "1%"), (0.004, "0%"), (None, None)])
 def test_fit_is_a_whole_percent(response, fit, text) -> None:
@@ -315,7 +323,9 @@ def test_the_scoring_text_is_built_from_the_numbers_the_response_carries(respons
     assert lines[0].startswith("Each job's fit is 70% your skills")
     assert "30% how closely your past work resembles" in lines[0]
     assert "at least 80% of the required skills" in lines[1] and "at least 50%" in lines[1]
-    assert len(lines) == 2  # calibrated: no "approximate" note
+    assert lines[2] == ("A job that asks for at least 2.5 more years of experience than your CV "
+                        "shows is at most a partial match.")
+    assert len(lines) == 3  # calibrated: no "approximate" note
 
 
 def test_the_scoring_text_copes_with_a_scorer_it_does_not_know(response) -> None:
