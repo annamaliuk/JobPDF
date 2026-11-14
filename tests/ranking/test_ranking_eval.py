@@ -35,7 +35,7 @@ from jobpdf.ranking.ranking_eval import (
     tfidf_similarities,
     tune,
 )
-from jobpdf.ranking.score import assign_band
+from jobpdf.ranking.score import assign_band, skill_coverage
 from jobpdf.ranking.synthetic import generate, truth_key
 from jobpdf.ranking.synthetic_catalog import SKILLS
 from tests.normalization.fakes import FakeEmbedder
@@ -146,7 +146,7 @@ def test_before_and_current_use_their_own_formula_and_band_rule(perfect) -> None
 
     fit, band = score_pair(pair, Variant(CURRENT, CURRENT_WEIGHTS))
     assert fit == pytest.approx(0.40 * skill + 0.45 * 0.5 + 0.15 * years)
-    assert band is assign_band(fit, True)[0]
+    assert band is assign_band(fit, skill_coverage(pair.overlap))[0]
 
 
 def test_tune_picks_the_variant_that_wins_on_training_candidates(perfect) -> None:
