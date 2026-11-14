@@ -51,7 +51,7 @@ from jobpdf.pipeline import MAX_UPLOAD_BYTES, PipelineError, PipelineResult
 from jobpdf.places import COUNTRY_NAMES
 from jobpdf.ranking.eligibility import normalize_country
 from jobpdf.web import progress, update
-from jobpdf.web.view import Report, build_report
+from jobpdf.web.view import Report, build_report, plural
 
 log = logging.getLogger(__name__)
 
@@ -87,8 +87,6 @@ WEB_DETAILS: dict[str, str] = {
     api.INVALID_REQUEST: "Choose a PDF or Word file and try again.",
     "rate_limited": "You have uploaded a lot of CVs for now. Try again in {wait}.",
     update.REPORT_EXPIRED: "This report can no longer be updated. Please upload your CV again.",
-    update.TOO_MANY_SKILLS: (f"Add up to {update.MAX_ADDED_SKILLS} skills at a time, each up to "
-                             f"{update.MAX_SKILL_CHARS} characters."),
 }
 
 _templates = Environment(
@@ -184,7 +182,7 @@ def _report_html(svc: api.Services, result: PipelineResult, language: str,
 
 
 def _state_page(svc: api.Services, response: AnalysisResponse, state: update.ReportState,
-                updated: bool = False) -> str:
+                updated: bool = False, note: str | None = None) -> str:
     """Skill names are Ukrainian only when asked for; if the names cannot be loaded the page is
     made in English (``skill_names`` logs why)."""
     names: Mapping[str, str] | None = None
@@ -194,13 +192,26 @@ def _state_page(svc: api.Services, response: AnalysisResponse, state: update.Rep
         except Exception as exc:  # never a reason to lose the report
             log.warning("ukrainian skill names unavailable (%s)", type(exc).__name__)
     return render_report(build_report(response, names, state.home_country),
-                         update.encode_state(state), updated)
+                         update.encode_state(state), updated, note)
 
 
-def render_report(report: Report, state: str, updated: bool = False) -> str:
-    return _render("report.html", report=report, state=state, updated=updated,
+def render_report(report: Report, state: str, updated: bool = False,
+                  note: str | None = None) -> str:
+    return _render("report.html", report=report, state=state, updated=updated, note=note,
                    update_path=UPDATE_PATH, max_skills=update.MAX_ADDED_SKILLS,
                    max_typed=update.MAX_ADDED_SKILLS * (update.MAX_SKILL_CHARS + 2))
+
+
+def _skipped(typed: update.Typed) -> str | None:
+    """What the update left out of the typed skills, in a sentence; None when nothing was."""
+    parts = []
+    if typed.over_limit:
+        parts.append(f"Only the first {update.MAX_ADDED_SKILLS} skills were added; "
+                     f"{plural(typed.over_limit, 'more was', 'more were')} left out.")
+    if typed.too_long:
+        parts.append(f"{plural(typed.too_long, 'skill')} longer than {update.MAX_SKILL_CHARS} "
+                     f"characters {'was' if typed.too_long == 1 else 'were'} skipped.")
+    return " ".join(parts) or None
 
 
 async def _update(request: Request) -> HTMLResponse:
@@ -223,9 +234,9 @@ async def _update(request: Request) -> HTMLResponse:
         await form.close()
     try:
         state = update.decode_state(fields["state"])
-        add = update.typed_skills(fields["skills"], have)
     except update.UpdateError as exc:
         return _error_page(exc.code, 400)
+    typed = update.typed_skills(fields["skills"], have)
 
     if not svc.slots.acquire(blocking=False):
         svc.recorder.record_access_denied(api.BUSY)
@@ -233,9 +244,9 @@ async def _update(request: Request) -> HTMLResponse:
     try:
         def work() -> str:
             new_state, response = update.update_report(
-                state, add, remove, vacancies=svc.vacancies(), scorer=svc.scorer,
+                state, typed.names, remove, vacancies=svc.vacancies(), scorer=svc.scorer,
                 normalizer=svc.normalizer or get_normalization_service())
-            return _state_page(svc, response, new_state, updated=True)
+            return _state_page(svc, response, new_state, updated=True, note=_skipped(typed))
 
         html = await run_in_threadpool(work)
     except Exception as exc:  # never echo what was sent

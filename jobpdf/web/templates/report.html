@@ -29,6 +29,7 @@
 <section class="intro">
   <h1>Your CV report</h1>
   {% if updated %}<p class="quiet">Matches updated with your changes, against the jobs we have now.</p>{% endif %}
+  {% if note %}<p class="missing">{{ note }}</p>{% endif %}
   {% if report.summary %}<p class="lead">{{ report.summary }}</p>{% endif %}
   <dl class="figures">
     {% for figure in report.figures %}

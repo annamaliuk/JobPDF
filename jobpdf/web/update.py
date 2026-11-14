@@ -24,6 +24,7 @@ import re
 import time
 from collections import Counter
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict
 
@@ -58,9 +59,8 @@ MAX_ADDED_SKILLS = 20  # per update
 MAX_SKILL_CHARS = 60
 ADDED_PREFIX = "added["  # the path of a typed skill: added[0], added[1], ...
 
-# Error codes for the page (routes.WEB_DETAILS words them).
+# The error code for the page (routes.WEB_DETAILS words it).
 REPORT_EXPIRED = "report_expired"
-TOO_MANY_SKILLS = "too_many_skills"
 
 
 class UpdateError(Exception):
@@ -123,15 +123,23 @@ def decode_state(text: str) -> ReportState:
     return state
 
 
-def typed_skills(text: str, ticked: Iterable[str] = ()) -> list[str]:
+@dataclass(frozen=True)
+class Typed:
+    names: list[str]
+    too_long: int = 0  # left out: longer than MAX_SKILL_CHARS
+    over_limit: int = 0  # left out: past the first MAX_ADDED_SKILLS
+
+
+def typed_skills(text: str, ticked: Iterable[str] = ()) -> Typed:
     """The skill names from the "add skills" line (separated by commas, semicolons or new
-    lines) and the "I have this" ticks, trimmed and without repeats."""
+    lines) and the "I have this" ticks, trimmed and without repeats. Names over the limits are
+    left out and counted, so the page can say so instead of losing the report."""
     names = [n.strip() for n in re.split(r"[,;\n]", text or "")]
     names += [n.strip() for n in ticked]
     unique = list(dict.fromkeys(n for n in names if n))
-    if len(unique) > MAX_ADDED_SKILLS or any(len(n) > MAX_SKILL_CHARS for n in unique):
-        raise UpdateError(TOO_MANY_SKILLS)
-    return unique
+    fitting = [n for n in unique if len(n) <= MAX_SKILL_CHARS]
+    return Typed(fitting[:MAX_ADDED_SKILLS], len(unique) - len(fitting),
+                 max(len(fitting) - MAX_ADDED_SKILLS, 0))
 
 
 def update_report(

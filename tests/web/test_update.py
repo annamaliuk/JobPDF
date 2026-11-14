@@ -18,9 +18,10 @@ from jobpdf.ranking.semantic import embed_vacancy
 from jobpdf.web import routes, update
 from jobpdf.web.update import (
     MAX_ADDED_SKILLS,
+    MAX_SKILL_CHARS,
     MAX_STATE_CHARS,
     REPORT_EXPIRED,
-    TOO_MANY_SKILLS,
+    Typed,
     UpdateError,
     decode_state,
     encode_state,
@@ -100,19 +101,18 @@ def test_a_state_this_page_did_not_make_is_refused(make) -> None:
 
 
 def test_typed_skills_are_split_trimmed_and_listed_once() -> None:
-    assert typed_skills(" Airflow, dbt ;Spark\n\n, dbt ", ["Docker", " Spark "]) == [
-        "Airflow", "dbt", "Spark", "Docker"]
-    assert typed_skills("", []) == [] and typed_skills(" , ;") == []
+    assert typed_skills(" Airflow, dbt ;Spark\n\n, dbt ", ["Docker", " Spark "]) == Typed(
+        ["Airflow", "dbt", "Spark", "Docker"])
+    assert typed_skills("", []) == Typed([]) and typed_skills(" , ;") == Typed([])
+    assert typed_skills("CI/CD, Apache Airflow").names == ["CI/CD", "Apache Airflow"]
 
 
-@pytest.mark.parametrize("text", [
-    ", ".join(f"s{i}" for i in range(MAX_ADDED_SKILLS + 1)), "x" * 61])
-def test_too_many_or_too_long_skills_are_refused(text) -> None:
-    with pytest.raises(UpdateError) as caught:
-        typed_skills(text)
+def test_skills_over_the_limits_are_left_out_and_counted() -> None:
+    many = ", ".join(f"s{i}" for i in range(MAX_ADDED_SKILLS + 3))
 
-    assert caught.value.code == TOO_MANY_SKILLS
-    assert len(typed_skills(", ".join(f"s{i}" for i in range(MAX_ADDED_SKILLS)))) == 20
+    assert typed_skills(many) == Typed([f"s{i}" for i in range(MAX_ADDED_SKILLS)], 0, 3)
+    assert typed_skills("dbt, " + "x" * (MAX_SKILL_CHARS + 1)) == Typed(["dbt"], 1, 0)
+    assert typed_skills("x" * MAX_SKILL_CHARS).names == ["x" * MAX_SKILL_CHARS]
 
 
 # --- re-ranking --------------------------------------------------------------------------------
@@ -304,19 +304,26 @@ def test_the_language_and_country_of_the_first_page_are_kept(client) -> None:
     assert decode_state(state_of(page)).language == "uk"
 
 
-@pytest.mark.parametrize("form, code", [
-    ({"state": "broken"}, REPORT_EXPIRED),
-    ({"state": ""}, REPORT_EXPIRED),
-    ({"skills": "x" * 61}, TOO_MANY_SKILLS),  # with the page's own state
-])
-def test_a_bad_update_is_an_error_page_that_repeats_nothing(client, form, code) -> None:
-    first = report_page(client)
-
-    response = client.post(routes.UPDATE_PATH, data={"state": state_of(first), **form})
+@pytest.mark.parametrize("state", ["broken", ""])
+def test_a_bad_state_is_an_error_page_that_repeats_nothing(client, state) -> None:
+    response = client.post(routes.UPDATE_PATH, data={"state": state})
 
     assert response.status_code == 400
-    assert htmllib.escape(routes.WEB_DETAILS[code], quote=False) in response.text
-    assert "x" * 61 not in response.text and "broken" not in response.text
+    assert htmllib.escape(routes.WEB_DETAILS[REPORT_EXPIRED], quote=False) in response.text
+    assert "broken" not in response.text
+
+
+def test_skills_over_the_limits_keep_the_report_and_say_what_was_left_out(client) -> None:
+    first = report_page(client)
+    typed = ", ".join(["Rust", "y" * 61, "z" * 70] + [f"s{i}" for i in range(MAX_ADDED_SKILLS)])
+
+    page = post_update(client, first, skills=typed).text
+
+    assert "Only the first 20 skills were added; 1 more was left out. " \
+           "2 skills longer than 60 characters were skipped." in page
+    assert "<h3>Added by you</h3>" in page and "Missing: rust." not in page
+    assert "y" * 61 not in page and "s19" not in page  # Rust and s0 to s18 were the first 20
+    assert "left out" not in post_update(client, first, skills="Rust").text
 
 
 def test_an_update_too_big_to_be_a_report_is_refused_before_it_is_read(client) -> None:

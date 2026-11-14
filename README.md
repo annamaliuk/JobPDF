@@ -340,7 +340,8 @@ on the page itself (see "Your skills and updates" below). Close the page and it 
   list and each job's skills), in groups: used for matching, "please check" (matched with low
   confidence, each with a remove tick and how it was read), and not recognised (these count
   only when a vacancy writes them the same way). Under them, "Add skills we missed" takes up to
-  20 names, and each "Within reach" line has an "I have this" tick. "Update matches" posts a
+  20 names separated by commas or semicolons (more, or names over 60 characters, are left out
+  and the updated report says so), and each "Within reach" line has an "I have this" tick. "Update matches" posts a
   plain form to `POST /report/update`: the page carries what ranking needs in a hidden field
   (the matched skills, the past-work vectors, the counted months, the country and language;
   base64 JSON, at most 256 KB, refused after a ranking version change), and the server
