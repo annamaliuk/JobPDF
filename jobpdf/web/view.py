@@ -31,7 +31,13 @@ from urllib.parse import urlsplit
 
 from jobpdf.api.response import AnalysisResponse, MatchOut, SkillOut
 from jobpdf.places import country_name
-from jobpdf.ranking.eligibility import ON_SITE_ABROAD
+from jobpdf.ranking.eligibility import (
+    EXPERIENCE_MARGIN_MONTHS,
+    EXPERIENCE_SHORT,
+    LOCATION_REASONS,
+    ON_SITE_ABROAD,
+    REMOTE_OUTSIDE_REGION,
+)
 from jobpdf.ranking.score import Band
 
 BEST_COUNT = 5  # matches shown as full rows; the rest are in the table
@@ -47,7 +53,7 @@ BAND_LABELS = {
     Band.UNSCORED.value: "Not scored",
 }
 NO_JOBS = "There are no jobs to compare with your CV yet. Try again later."
-EVERYTHING_HIDDEN = ("Every job we know of is on site in another country, so none is shown. "
+EVERYTHING_HIDDEN = ("Every job we know of needs you in another country, so none is shown. "
                      "To see them, choose \"Don't hide\" on the upload page.")
 NO_REQUIRED = "This job lists no required skills, so your skills could not be compared."
 
@@ -240,9 +246,18 @@ def _job(match: MatchOut, labels: _Labels) -> Job:
         segments=_segments(required.matched_count, required.count),
         missing=missing_text,
         nice_to_have=f"Nice to have: {nice.matched_count} of {nice.count}." if nice.count else None,
-        lowered=(f"Lowered from {match.capped_from.value} to {match.band.value} after an "
-                 "eligibility check.") if match.capped_from else None,
+        lowered=_lowered(match),
     )
+
+
+def _lowered(match: MatchOut) -> str | None:
+    if match.capped_from is None:
+        return None
+    if EXPERIENCE_SHORT in match.adjustment_reasons:
+        return (f"Lowered from {match.capped_from.value} to {match.band.value}: the job asks for "
+                "more years of experience than your CV shows.")
+    return (f"Lowered from {match.capped_from.value} to {match.band.value} after an "
+            "eligibility check.")
 
 
 def _coverage(have: int, total: int) -> str:
@@ -308,8 +323,8 @@ def _learn(response: AnalysisResponse, labels: _Labels) -> list[str]:
 
 def _empty(response: AnalysisResponse) -> str:
     """Why there is nothing to show: no jobs at all, or every job was left out on request."""
-    if response.hidden_count and \
-            response.hidden_reasons.get(ON_SITE_ABROAD, 0) == response.hidden_count:
+    located = sum(response.hidden_reasons.get(reason, 0) for reason in LOCATION_REASONS)
+    if response.hidden_count and located == response.hidden_count:
         return EVERYTHING_HIDDEN
     return NO_JOBS
 
@@ -333,7 +348,13 @@ def _hidden_notes(response: AnalysisResponse, home_country: str | None) -> list[
             else "in another country"
         notes.append(f"{plural(abroad, 'on-site or hybrid posting')} {where} left out, "
                      "as you asked.")
-    other = max(response.hidden_count - abroad, 0)
+    remote = response.hidden_reasons.get(REMOTE_OUTSIDE_REGION, 0)
+    if remote:
+        who = f"outside {country_name(home_country)}" if country_name(home_country) \
+            else "in other countries"
+        notes.append(f"{plural(remote, 'remote posting')} open only to people {who} left out, "
+                     "as you asked.")
+    other = max(response.hidden_count - abroad - remote, 0)
     if other:
         notes.append(
             f"{plural(other, 'posting')} left out because your CV suggests "
@@ -356,6 +377,8 @@ def _scoring(response: AnalysisResponse) -> list[str]:
             f"A strong match means you have at least {percent(strong)} of the required skills "
             f"and your experience is not far off. A partial match means at least "
             f"{percent(partial)}. Anything lower is weak.")
+        lines.append(f"A job that asks for at least {EXPERIENCE_MARGIN_MONTHS / 12:g} more years "
+                     "of experience than your CV shows is at most a partial match.")
     if response.scoring.semantic_calibrated is not True:
         lines.append("The comparison of past work is approximate for now.")
     return lines

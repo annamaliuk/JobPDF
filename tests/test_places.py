@@ -114,3 +114,40 @@ def test_a_capital_code_names_its_state_province_or_country(text, code) -> None:
 def test_a_code_that_is_both_a_state_and_a_country_is_left_unsaid() -> None:
     assert resolve_country("Springfield, MA") is None  # Massachusetts or Morocco
     assert resolve_country("Boston, MA") == "US"  # the city decides when the code cannot
+
+
+# --- JM-47: the places a remote job is open to ---------------------------------------------------
+
+
+@pytest.mark.parametrize("text, codes", [
+    ("USA", {"US"}),
+    ("USA Only", {"US"}),
+    ("US-based", {"US"}),
+    ("USA, Canada", {"US", "CA"}),
+    ("Remote - Germany", {"DE"}),
+    ("Poland/Ukraine", {"PL", "UA"}),
+    ("Austin, TX", {"US"}),
+    ("North America", {"US", "CA", "MX"}),
+])
+def test_a_place_text_gives_the_countries_it_is_open_to(text, codes) -> None:
+    assert places.allowed_countries(text) == codes
+
+
+def test_europe_includes_ukraine_and_the_eu_does_not() -> None:
+    assert "UA" in places.allowed_countries("Europe")
+    assert "UA" not in places.allowed_countries("EU only")
+    assert "UA" not in places.allowed_countries("EEA")
+    assert "PL" in places.allowed_countries("EU only")
+
+
+@pytest.mark.parametrize("text", [
+    None, "", "  ", "Remote", "Worldwide", "Anywhere", "USA, Worldwide",
+    "CET +/- 3 HOURS", "UTC-5 to UTC+1", "CIS", "USA, Mars", "Georgia",
+])
+def test_an_open_or_unsure_place_text_limits_nothing(text) -> None:
+    assert places.allowed_countries(text) is None
+
+
+def test_every_region_is_made_of_countries_the_form_offers() -> None:
+    for codes in places._REGION_SETS.values():
+        assert codes <= set(COUNTRY_NAMES)

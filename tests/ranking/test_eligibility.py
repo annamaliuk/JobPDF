@@ -1,17 +1,23 @@
-"""JM-49: hiding on-site vacancies abroad. A vacancy is hidden only on clear evidence."""
+"""JM-49 and JM-47: hiding or capping jobs the candidate cannot take, on clear evidence only."""
 
 import pytest
 from pydantic import ValidationError
 
 from jobpdf.api.response import build_response
 from jobpdf.ranking.eligibility import (
+    EXPERIENCE_SHORT,
     NOT_REMOTE_MODES,
     ON_SITE_ABROAD,
+    REMOTE_OUTSIDE_REGION,
     abroad_adjustments,
+    experience_adjustments,
     is_on_site_abroad,
+    location_adjustments,
+    merge_adjustments,
     normalize_country,
 )
 from jobpdf.ranking.models import VacancyFeatures
+from jobpdf.ranking.score import Band, VacancyAdjustment
 from tests.pipeline.fakes import VACANCIES, run
 
 
@@ -138,3 +144,83 @@ def test_a_vacancy_with_the_same_reason_twice_counts_once() -> None:
     doubled = [hidden[0].model_copy(update={"adjustment_reasons": ["a", "a", "b"]})]
 
     assert _hidden_reasons(doubled) == {"a": 1, "b": 1}
+
+
+# --- JM-47: remote jobs open only elsewhere -----------------------------------------------------
+
+
+def remote(vid="r", where=None, country=None) -> VacancyFeatures:
+    return VacancyFeatures(id=vid, source="s", title="T", work_mode="remote",
+                           location_raw=where, country=country)
+
+
+@pytest.mark.parametrize("where, hidden", [
+    ("USA only", True),
+    ("USA, Canada", True),
+    ("EU only", True),
+    ("LATAM", True),
+    ("Europe", False),
+    ("Ukraine", False),
+    ("Poland, Ukraine", False),
+    ("Worldwide", False),
+    ("CET +/- 3 hours", False),
+    (None, False),
+])
+def test_a_remote_job_is_hidden_only_when_its_place_text_leaves_the_country_out(where, hidden):
+    assert ("r" in location_adjustments([remote(where=where)], "UA")) is hidden
+
+
+def test_a_remote_jobs_country_alone_hides_nothing() -> None:
+    assert location_adjustments([remote(country="DE")], "UA") == {}  # may be the company's
+
+
+def test_the_place_rules_need_a_country() -> None:
+    assert location_adjustments([remote(where="USA"), vac("a", "on_site", "DE")], None) == {}
+
+
+def test_both_place_rules_come_together_with_their_own_reason() -> None:
+    adjustments = location_adjustments([remote(where="USA"), vac("a", "on_site", "DE")], "UA")
+
+    assert adjustments["r"].reasons == [REMOTE_OUTSIDE_REGION] and adjustments["r"].hidden
+    assert adjustments["a"].reasons == [ON_SITE_ABROAD] and adjustments["a"].hidden
+
+
+# --- JM-47: years of experience ----------------------------------------------------------------
+
+
+def asks(years, vid="v") -> VacancyFeatures:
+    return VacancyFeatures(id=vid, source="s", title="T", min_years_experience=years)
+
+
+@pytest.mark.parametrize("years, months, capped", [
+    (5, 30, True),  # exactly 2.5 years short
+    (5, 31, False),
+    (3, 6, True),
+    (3, 16, False),
+    (3, 0, True),  # no experience at all
+    (2, 0, False),  # junior jobs stay as they are
+    (None, 0, False),  # the job asks for nothing
+    (0, 0, False),
+])
+def test_a_job_asking_for_clearly_more_experience_is_capped_at_partial(years, months, capped):
+    adjustments = experience_adjustments([asks(years)], months)
+
+    assert ("v" in adjustments) is capped
+    if capped:
+        assert adjustments["v"] == VacancyAdjustment(band_cap=Band.PARTIAL,
+                                                     reasons=[EXPERIENCE_SHORT])
+
+
+def test_unknown_experience_caps_nothing() -> None:
+    assert experience_adjustments([asks(10)], None) == {}
+
+
+def test_merged_adjustments_hide_if_any_does_keep_the_lowest_cap_and_every_reason() -> None:
+    merged = merge_adjustments(
+        {"a": VacancyAdjustment(band_cap=Band.PARTIAL, reasons=["x"])},
+        {"a": VacancyAdjustment(hidden=True, band_cap=Band.WEAK, reasons=["y", "x"]),
+         "b": VacancyAdjustment(reasons=["z"])},
+    )
+
+    assert merged["a"] == VacancyAdjustment(hidden=True, band_cap=Band.WEAK, reasons=["x", "y"])
+    assert merged["b"].reasons == ["z"]

@@ -75,6 +75,7 @@ from jobpdf.normalization.service import (
     ServiceVersions,
     get_normalization_service,
 )
+from jobpdf.ranking.eligibility import experience_adjustments, merge_adjustments
 from jobpdf.ranking.models import CandidateSkills, VacancyFeatures
 from jobpdf.ranking.score import RankingResult, Scorer, VacancyAdjustment, rank_vacancies
 from jobpdf.ranking.semantic import CandidateVectors, embed_candidate
@@ -259,6 +260,9 @@ def analyze_cv(
     options = {} if scorer is None else {"scorer": scorer}
     _notify(on_stage, "ranking")
     with _timed(timings, "ranking"):
+        months = counted_experience_months(profile, extraction.warnings)
+        adjustments = merge_adjustments(adjustments or {},
+                                        experience_adjustments(vacancies, months))
         ranking = rank_vacancies(candidate_skills, vectors, vacancies, adjustments, **options)
     warnings.add_many("ranking", ranking.warnings)
 
@@ -286,6 +290,18 @@ def analyze_cv(
     )
     _log_summary(result)
     return result
+
+
+def counted_experience_months(profile: CandidateProfile, extraction_warnings: Iterable[str]
+                              ) -> int | None:
+    """The months the experience check (JM-47) may trust: 0 for a CV with no jobs, None when
+    a job's dates could not be counted (the total would then be too low)."""
+    if not profile.experience:
+        return 0
+    codes = {classify_extraction_warning(w) for w in extraction_warnings}
+    if codes & {code for _, code in EXPERIENCE_WARNING_FRAGMENTS}:
+        return None
+    return profile.total_experience_months
 
 
 def classify_extraction_warning(text: str) -> str:

@@ -11,7 +11,7 @@ from jobpdf import pipeline
 from jobpdf.api.app import Services, create_app
 from jobpdf.api.response import AnalysisResponse, build_response
 from jobpdf.places import COUNTRY_NAMES
-from jobpdf.ranking.eligibility import ON_SITE_ABROAD
+from jobpdf.ranking.eligibility import ON_SITE_ABROAD, REMOTE_OUTSIDE_REGION
 from jobpdf.web import routes, view
 from jobpdf.web.view import EVERYTHING_HIDDEN, NO_JOBS, build_report
 from tests.api.test_app import make_services
@@ -65,8 +65,8 @@ def test_the_upload_form_has_the_choice_with_no_hiding_first_and_every_country()
     assert '<option value="UA">Ukraine</option>' in select
     names = re.findall(r'<option value="[A-Z]{2}">([^<]+)</option>', select)
     assert names == sorted(names)
-    assert 'for="home_country">Hide on-site jobs outside</label>' in html
-    assert "Remote jobs stay." in html
+    assert 'for="home_country">Where do you live?</label>' in html
+    assert "Remote jobs open to your country stay." in html
 
 
 def test_the_choice_is_explained_to_screen_readers_and_is_part_of_the_form() -> None:
@@ -305,3 +305,32 @@ def test_the_empty_message_depends_on_why_the_list_is_empty(response) -> None:
 def test_the_form_field_and_the_view_agree_on_the_reason_code() -> None:
     assert view.ON_SITE_ABROAD == ON_SITE_ABROAD == "on_site_abroad"
     assert routes.HOME_COUNTRY_FIELD == "home_country"
+
+
+# --- JM-47: remote jobs open only elsewhere ----------------------------------------------------
+
+
+def test_choosing_a_country_also_hides_remote_jobs_open_only_elsewhere() -> None:
+    vacancies = [v.model_copy(update={"work_mode": "remote", "location_raw": where})
+                 for v, where in zip(VACANCIES, ["USA only", "Europe", "Worldwide"], strict=True)]
+
+    html = page(vacancies, home_country="UA")
+
+    assert "Role both" not in html and "Role one" in html and "Role none" in html
+    assert "1 remote posting open only to people outside Ukraine left out, as you asked." in html
+
+
+def test_the_remote_note_counts_and_copes_without_a_country(response) -> None:
+    named = build_report(with_hidden(response, {REMOTE_OUTSIDE_REGION: 3}, 3), home_country="PL")
+    unnamed = build_report(with_hidden(response, {REMOTE_OUTSIDE_REGION: 1}, 1))
+
+    assert "3 remote postings open only to people outside Poland left out, as you asked." in \
+        named.notes
+    assert "1 remote posting open only to people in other countries left out, as you asked." in \
+        unnamed.notes
+
+
+def test_everything_hidden_for_either_place_reason_gets_the_everything_hidden_message(response):
+    both = with_hidden(response, {ON_SITE_ABROAD: 2, REMOTE_OUTSIDE_REGION: 1}, 3, matches=[])
+
+    assert build_report(both).empty == EVERYTHING_HIDDEN
