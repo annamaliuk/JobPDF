@@ -31,10 +31,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from jobpdf.normalization.match_cache import SkillMatch
 from jobpdf.normalization.service import ServiceVersions
-from jobpdf.pipeline import PipelineResult, PipelineVersions
+from jobpdf.pipeline import PipelineResult, PipelineVersions, PipelineWarning
 from jobpdf.ranking.insights import InsightsResult
 from jobpdf.ranking.models import SkillRef
-from jobpdf.ranking.score import Band, FitResult
+from jobpdf.ranking.score import Band, FitResult, RankingResult
 
 SCHEMA_VERSION = "1"
 GENERIC_DETAIL = "Something reduced the quality of this result."
@@ -120,6 +120,7 @@ class SkillOut(_Frozen):
     recognised: bool
     low_confidence: bool = False
     matched_by: str | None = None  # "exact" | "vector" | "llm"; None for vacancy skills
+    added: bool = False  # typed in on the report page (JM-53), not found in the CV
 
 
 class JobOut(_Frozen):
@@ -300,22 +301,44 @@ def build_response(
 ) -> AnalysisResponse:
     """The public response for one pipeline result.
 
-    ``page_size=None`` returns every match in one page. A page past the end is empty, not
-    an error. Raises ValueError for ``page < 1`` or ``page_size < 1``.
+    ``insights`` defaults to the ones the pipeline computed (JM-42). ``page_size=None``
+    returns every match in one page. A page past the end is empty, not an error. Raises
+    ValueError for ``page < 1`` or ``page_size < 1``.
     """
+    if insights is None and result.insights is not None:
+        insights = insights_out(result.insights)
+    meta = Meta(timings_ms=dict(result.timings_ms), input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens)
+    return assemble_response(_profile(result), result.ranking, result.warnings,
+                             result.versions, meta, insights=insights, page=page,
+                             page_size=page_size)
+
+
+def assemble_response(
+    profile: ProfileOut,
+    ranking: RankingResult,
+    warnings: Iterable[PipelineWarning],
+    versions: PipelineVersions,
+    meta: Meta,
+    *,
+    insights: Insights | None = None,
+    page: int = 1,
+    page_size: int | None = None,
+) -> AnalysisResponse:
+    """The response from its parts, for a result that has no CV behind it any more: the
+    report page's update (JM-53) re-ranks without a profile."""
     if page < 1:
         raise ValueError("page must be 1 or more")
     if page_size is not None and page_size < 1:
         raise ValueError("page_size must be 1 or more")
 
-    visible = result.ranking.results
+    visible = ranking.results
     total = len(visible)
     size = page_size if page_size is not None else max(total, 1)
     start = (page - 1) * size
     chosen = visible[start : start + size]
-    ranking = result.ranking
     return AnalysisResponse(
-        profile=_profile(result),
+        profile=profile,
         matches=[_match(fit, start + i + 1) for i, fit in enumerate(chosen)],
         pagination=Pagination(page=page, page_size=size, total=total,
                               pages=max(math.ceil(total / size), 1)),
@@ -326,10 +349,9 @@ def build_response(
         scoring=Scoring(scorer=ranking.scorer_name, weights=dict(ranking.weights),
                         thresholds=dict(ranking.thresholds),
                         semantic_calibrated=ranking.semantic_calibrated),
-        warnings=[warning_out(w.code, w.stage, w.count) for w in result.warnings],
-        versions=_versions(result.versions),
-        meta=Meta(timings_ms=dict(result.timings_ms), input_tokens=result.input_tokens,
-                  output_tokens=result.output_tokens),
+        warnings=[warning_out(w.code, w.stage, w.count) for w in warnings],
+        versions=_versions(versions),
+        meta=meta,
     )
 
 
@@ -453,6 +475,6 @@ def unknown_codes(codes: Iterable[str]) -> set[str]:
 
 
 __all__ = [
-    "SCHEMA_VERSION", "WARNING_DETAILS", "AnalysisResponse", "Insights", "build_response",
-    "skill_from_match", "skill_from_ref", "unknown_codes", "warning_out",
+    "SCHEMA_VERSION", "WARNING_DETAILS", "AnalysisResponse", "Insights", "assemble_response",
+    "build_response", "skill_from_match", "skill_from_ref", "unknown_codes", "warning_out",
 ]

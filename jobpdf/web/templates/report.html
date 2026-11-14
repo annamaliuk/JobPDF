@@ -24,15 +24,63 @@
   </div>
 </li>
 {% endmacro %}
+{% macro chip_label(skill) %}<span{% if skill.uk %} lang="uk"{% endif %}>{{ skill.label }}</span>{% if skill.written %} <span class="quiet">(from "{{ skill.written }}")</span>{% endif %}{% if not skill.recognised %} <span class="quiet">(not in our skill list)</span>{% endif %}{% endmacro %}
 {% block main %}
 <section class="intro">
   <h1>Your CV report</h1>
+  {% if updated %}<p class="quiet">Matches updated with your changes, against the jobs we have now.</p>{% endif %}
+  {% if note %}<p class="missing">{{ note }}</p>{% endif %}
   {% if report.summary %}<p class="lead">{{ report.summary }}</p>{% endif %}
   <dl class="figures">
     {% for figure in report.figures %}
     <div><dt>{{ figure.label }}</dt><dd>{{ figure.value }}</dd></div>
     {% endfor %}
   </dl>
+</section>
+
+<section aria-labelledby="skills-heading">
+  <h2 id="skills-heading">Your skills</h2>
+  <form id="update" method="post" action="{{ update_path }}">
+    <input type="hidden" name="state" value="{{ state }}">
+    {% if report.skills %}
+    <p>We found these skills in your CV and used them to match jobs.</p>
+    <ul class="chips">
+      {% for skill in report.skills %}<li{% if skill.uk %} lang="uk"{% endif %}>{{ skill.label }}</li>{% endfor %}
+    </ul>
+    {% else %}
+    <p>No skills were recognised in your CV.</p>
+    {% endif %}
+    {% if report.readings %}
+    <h3>How we read your wording</h3>
+    <ul class="plain">
+      {% for line in report.readings %}<li>{{ line | marked }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if report.check %}
+    <h3>Please check</h3>
+    <p>We're not sure we read these right. Tick any that are wrong to remove them.</p>
+    <ul class="chips ticks">
+      {% for skill in report.check %}<li><label><input type="checkbox" name="remove" value="{{ skill.value }}"> {{ chip_label(skill) }}</label></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if report.added %}
+    <h3>Added by you</h3>
+    <p>These count like any other skill. Tick one to take it back.</p>
+    <ul class="chips ticks">
+      {% for skill in report.added %}<li><label><input type="checkbox" name="remove" value="{{ skill.value }}"> {{ chip_label(skill) }}</label></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if report.unrecognised %}
+    <h3>Not recognised</h3>
+    <p>These aren't in our skill list, so they only count when a job writes them exactly the same way: {{ report.unrecognised | join(", ") }}.</p>
+    {% endif %}
+    <p class="add-row">
+      <label for="add-skills">Add skills we missed</label>
+      <input id="add-skills" name="skills" type="text" maxlength="{{ max_typed }}" autocomplete="off" placeholder="For example: Airflow, dbt" aria-describedby="add-skills-hint">
+      <button type="submit">Update matches</button>
+    </p>
+    <p id="add-skills-hint" class="quiet">Separate skills with commas, up to {{ max_skills }} at a time.</p>
+  </form>
 </section>
 
 {% if report.empty %}
@@ -51,8 +99,9 @@
   <h2 id="reach-heading">Within reach</h2>
   <p>Jobs that are one or two skills away from a strong match.</p>
   <ul class="plain">
-    {% for line in report.reach %}<li>{{ line | marked }}</li>{% endfor %}
+    {% for item in report.reach %}<li>{{ item.text | marked }}{% for skill in item.skills %} <label class="tick"><input type="checkbox" form="update" name="have" value="{{ skill.value }}"> I have <span{% if skill.uk %} lang="uk"{% endif %}>{{ skill.label }}</span></label>{% endfor %}</li>{% endfor %}
   </ul>
+  <p><button type="submit" form="update">Update matches</button></p>
 </section>
 {% endif %}
 
@@ -64,27 +113,6 @@
   </ul>
 </section>
 {% endif %}
-
-<section aria-labelledby="skills-heading">
-  <h2 id="skills-heading">Your skills</h2>
-  {% if report.skills %}
-  <ul class="chips">
-    {% for skill in report.skills %}<li{% if skill.uk %} lang="uk"{% endif %}>{{ skill.label }}{% if skill.unsure %} <span class="quiet">(not sure)</span>{% endif %}</li>{% endfor %}
-  </ul>
-  {% else %}
-  <p>No skills were recognised in your CV.</p>
-  {% endif %}
-  {% if report.readings %}
-  <h3>How we read your wording</h3>
-  <ul class="plain">
-    {% for line in report.readings %}<li>{{ line | marked }}</li>{% endfor %}
-  </ul>
-  {% endif %}
-  {% if report.unrecognised %}
-  <h3>Not recognised</h3>
-  <p>These were not used for matching: {{ report.unrecognised | join(", ") }}.</p>
-  {% endif %}
-</section>
 
 {% if report.rest %}
 <section aria-labelledby="all-heading">

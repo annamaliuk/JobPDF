@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 from jobpdf.api.response import AnalysisResponse, MatchOut, SkillOut
+from jobpdf.normalization.text import normalize
 from jobpdf.places import country_name
 from jobpdf.ranking.eligibility import (
     EXPERIENCE_SHORT,
@@ -37,6 +38,7 @@ from jobpdf.ranking.eligibility import (
     ON_SITE_ABROAD,
     REMOTE_OUTSIDE_REGION,
 )
+from jobpdf.ranking.models import RAW_KEY_PREFIX
 from jobpdf.ranking.score import EXPERIENCE_MARGIN_MONTHS, Band
 
 BEST_COUNT = 5  # matches shown as full rows; the rest are in the table
@@ -121,8 +123,16 @@ class Job:
 @dataclass(frozen=True)
 class SkillLine:
     label: str
-    unsure: bool
+    value: str  # what its tick sends: the skill's key to remove it, or a name to add (JM-53)
+    written: str | None = None  # the CV's own wording when the label differs ("JS")
     uk: bool = False  # the label is a Ukrainian name (JM-46)
+    recognised: bool = True  # an added skill may not be in the skill list
+
+
+@dataclass(frozen=True)
+class Reach:
+    text: str  # "Data Engineer at Acme: add dbt to reach a strong match."
+    skills: list[SkillLine]  # the skills it names, each with an "I have this" tick
 
 
 @dataclass(frozen=True)
@@ -131,9 +141,11 @@ class Report:
     figures: list[Figure]
     best: list[Job]
     rest: list[Job]  # every match, in rank order (the table), including the best ones
-    reach: list[str] = field(default_factory=list)
+    reach: list[Reach] = field(default_factory=list)
     learn: list[str] = field(default_factory=list)
-    skills: list[SkillLine] = field(default_factory=list)
+    skills: list[SkillLine] = field(default_factory=list)  # used for matching
+    check: list[SkillLine] = field(default_factory=list)  # matched, but not sure how
+    added: list[SkillLine] = field(default_factory=list)  # typed in on the page (JM-53)
     readings: list[str] = field(default_factory=list)
     unrecognised: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
@@ -146,18 +158,22 @@ def build_report(response: AnalysisResponse, names: Mapping[str, str] | None = N
     labels = _Labels(names)
     jobs = [_job(m, labels) for m in response.matches]
     by_id = {m.vacancy.id: m for m in response.matches}
-    skills = _unique_skills(response.profile.skills)
+    every = _unique_skills([*response.profile.skills,
+                            *(s for job in response.profile.experience for s in job.skills)])
+    from_cv = [s for s in every if not s.added]
+    used = [s for s in from_cv if s.recognised and not s.low_confidence]
     return Report(
         summary=_clean(response.profile.summary),
-        figures=_figures(response, skills),
+        figures=_figures(response, every),
         best=jobs[:BEST_COUNT],
         rest=jobs,
         reach=_reach(response, by_id, labels),
         learn=_learn(response, labels),
-        skills=[SkillLine(labels.name(s), s.low_confidence, labels.is_ukrainian(s))
-                for s in skills if s.recognised],
-        readings=_readings(skills, labels),
-        unrecognised=[s.name for s in skills if not s.recognised],
+        skills=[_chip(s, labels) for s in used],
+        check=[_chip(s, labels) for s in from_cv if s.recognised and s.low_confidence],
+        added=[_chip(s, labels) for s in every if s.added],
+        readings=_readings(used, labels),
+        unrecognised=[s.name for s in from_cv if not s.recognised],
         notes=_notes(response, home_country),
         scoring=_scoring(response),
         empty=None if jobs else _empty(response),
@@ -202,8 +218,11 @@ def _figures(response: AnalysisResponse, skills: list[SkillOut]) -> list[Figure]
     months = response.profile.total_experience_months
     if months is not None:
         figures.append(Figure(_duration(months), "Experience"))
-    recognised = sum(1 for s in skills if s.recognised)
-    figures.append(Figure(f"{recognised} of {len(skills)}", "Skills recognised"))
+    from_cv = [s for s in skills if not s.added]
+    recognised = sum(1 for s in from_cv if s.recognised)
+    figures.append(Figure(f"{recognised} of {len(from_cv)}", "Skills recognised"))
+    if len(from_cv) < len(skills):
+        figures.append(Figure(str(len(skills) - len(from_cv)), "Added by you"))
     figures.append(Figure(str(response.band_counts.get(Band.STRONG, 0)), "Strong matches"))
     figures.append(Figure(str(response.pagination.total), "Jobs compared"))
     return figures
@@ -272,12 +291,26 @@ def _segments(have: int, total: int) -> tuple[bool, ...]:
     return (True,) * filled + (False,) * (MAX_SEGMENTS - filled)
 
 
+def _chip(skill: SkillOut, labels: _Labels) -> SkillLine:
+    """A skill with its remove tick; ``written`` when the CV words it differently."""
+    shown = labels.name(skill)
+    written = skill.name.strip()
+    return SkillLine(shown, skill_key(skill),
+                     written if skill.recognised and written.lower() != shown.lower() else None,
+                     labels.is_ukrainian(skill), skill.recognised)
+
+
+def skill_key(skill: SkillOut) -> str:
+    """The key ranking compares by (``SkillRef.key``), which the update's remove ticks send."""
+    return skill.concept_id or RAW_KEY_PREFIX + normalize(skill.name)
+
+
 def _unique_skills(skills: list[SkillOut]) -> list[SkillOut]:
     """One entry per skill: recognised ones by concept, the others by their written name."""
     seen: set[str] = set()
     unique = []
     for skill in skills:
-        key = skill.concept_id or f"raw:{skill.name.strip().lower()}"
+        key = skill_key(skill)
         if key not in seen:
             seen.add(key)
             unique.append(skill)
@@ -295,7 +328,7 @@ def _readings(skills: list[SkillOut], labels: _Labels) -> list[str]:
 
 
 def _reach(response: AnalysisResponse, matches: dict[str, MatchOut],
-           labels: _Labels) -> list[str]:
+           labels: _Labels) -> list[Reach]:
     if not response.insights.computed:
         return []
     lines = []
@@ -305,8 +338,12 @@ def _reach(response: AnalysisResponse, matches: dict[str, MatchOut],
             continue
         names = " and ".join(labels.name(s) for s in item.missing)
         where = f" at {match.vacancy.company}" if match.vacancy.company else ""
-        lines.append(labels.line(
-            f"{match.vacancy.title}{where}: add {names} to reach a strong match.", item.missing))
+        text = labels.line(f"{match.vacancy.title}{where}: add {names} to reach a strong match.",
+                           item.missing)
+        # The tick adds the skill by its English name, which the update matches exactly.
+        ticks = [SkillLine(labels.name(s), s.label or s.name, uk=labels.is_ukrainian(s))
+                 for s in item.missing]
+        lines.append(Reach(text, ticks))
     return lines
 
 

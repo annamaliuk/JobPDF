@@ -294,6 +294,20 @@ button:disabled { opacity: 0.55; cursor: progress; }
   font-family: var(--sans);
   font-size: 0.9375rem;
 }
+.ticks label, label.tick { cursor: pointer; }
+label.tick { white-space: nowrap; font-size: 0.9375rem; margin-left: 0.5rem; }
+.add-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
+.add-row label { flex-basis: 100%; font-weight: 600; }
+.add-row input[type="text"] {
+  flex: 1 1 14rem;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+}
 
 /* table */
 .table-wrap {

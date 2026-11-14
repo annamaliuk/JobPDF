@@ -284,6 +284,31 @@ def test_llm_unavailable_degrades_and_caches_nothing(caller) -> None:
     assert len(cache) == 1  # only the exact hit
 
 
+def test_without_the_llm_the_exact_and_vector_tiers_still_decide_and_nothing_is_asked() -> None:
+    cache = InMemorySkillMatchCache()
+    index = undecided_index("alpha")
+    index.exact["gbq"] = [cand(BIGQUERY)]
+    caller = FakeToolCaller([])  # any call would fail the test: there is no reply to give
+
+    gbq, alpha = SkillMatcher(index, caller, cache).match_many(["GBQ", "Alpha"], use_llm=False)
+
+    assert caller.calls == []
+    assert gbq.tier is T.EXACT
+    assert (alpha.tier, alpha.warnings) == (T.UNMATCHED, [LLM_UNAVAILABLE])
+    assert len(cache) == 1  # the undecided one is not cached, so the next CV still asks
+
+
+def test_without_the_llm_an_earlier_llm_decision_still_comes_from_the_cache() -> None:
+    cache = InMemorySkillMatchCache()
+    index = FakeIndex(vectors={"big query": [cand(BIGQUERY, THRESHOLD + 1e-6)]})
+    SkillMatcher(index, FakeToolCaller([decisions((1, BIGQUERY))]), cache).match("Big Query")
+
+    m = SkillMatcher(index, FakeToolCaller([]), cache).match_many(["Big Query"],
+                                                                   use_llm=False)[0]
+
+    assert (m.tier, m.concept_id) == (T.LLM, BIGQUERY)
+
+
 # --- cache -----------------------------------------------------------------------
 
 

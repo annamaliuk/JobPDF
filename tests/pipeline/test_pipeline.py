@@ -539,3 +539,21 @@ def test_a_cv_without_jobs_counts_as_no_experience() -> None:
 
     assert reasons_of(run(vacancies=asking(3), caller=caller(reply(no_jobs))), "both") == [
         EXPERIENCE_SHORT]
+
+
+def test_the_result_carries_the_insights_and_what_an_update_needs() -> None:
+    result = run()
+
+    assert result.insights is not None and result.insights.working_set_size == 3
+    assert result.vectors is not None and result.vectors.paths
+    assert result.experience_months == result.profile.total_experience_months
+
+
+def test_rank_profile_is_the_ranking_stage_of_analyze_cv() -> None:
+    result = run()
+
+    ranking, insights = pipeline.rank_profile(result.candidate_skills, result.vectors, VACANCIES,
+                                              result.experience_months)
+
+    assert ranking.model_dump() == result.ranking.model_dump()
+    assert insights == result.insights

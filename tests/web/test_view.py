@@ -34,7 +34,11 @@ from tests.pipeline.fakes import run
 
 @pytest.fixture(scope="module")
 def response() -> AnalysisResponse:
-    return build_response(run())
+    """The real response with the skills only in the skills list, so a test that replaces that
+    list decides every skill on the page (the job's own skills are gathered too, JM-53)."""
+    full = build_response(run())
+    jobs = [job.model_copy(update={"skills": []}) for job in full.profile.experience]
+    return full.model_copy(update={"profile": full.profile.model_copy(update={"experience": jobs})})
 
 
 def skill(name: str, label: str | None = None, *, concept: str | None = "c", low=False):
@@ -77,7 +81,10 @@ def test_a_real_response_becomes_a_report_with_every_section(response) -> None:
     assert report.best[0].coverage == "You have 2 of 2 required skills."
     assert report.best[1].missing == "Missing: rust."
     assert [s.label for s in report.skills] == ["Python", "SQL"]
-    assert report.empty is None and report.reach == [] and report.learn == []
+    assert report.check == [] and report.added == [] and report.unrecognised == []
+    assert report.empty is None
+    assert [r.text for r in report.reach] == ["Role one: add rust to reach a strong match."]
+    assert [[t.value for t in r.skills] for r in report.reach] == [["rust"]]
 
 
 # --- figures -----------------------------------------------------------------------------------
@@ -254,9 +261,37 @@ def test_skills_are_listed_once_and_unsure_ones_flagged(response) -> None:
 
     report = build_report(response.model_copy(update={"profile": profile}))
 
-    assert [(s.label, s.unsure) for s in report.skills] == [("Python", False),
-                                                            ("JavaScript", True)]
+    assert [(s.label, s.value) for s in report.skills] == [("Python", "a")]
+    assert [(s.label, s.value, s.written) for s in report.check] == [("JavaScript", "b", "JS")]
     assert report.unrecognised == ["???", "Other"]
+
+
+def test_the_skills_each_job_used_are_listed_too_once_each(response) -> None:
+    job = response.profile.experience[0].model_copy(update={"skills": [
+        skill("Python", "Python", concept="a"), skill("Spark", "Apache Spark", concept="s")]})
+    profile = response.profile.model_copy(update={
+        "skills": [skill("Python", "Python", concept="a")], "experience": [job]})
+
+    report = build_report(response.model_copy(update={"profile": profile}))
+
+    assert [s.label for s in report.skills] == ["Python", "Apache Spark"]
+    assert [f.value for f in report.figures if f.label == "Skills recognised"] == ["2 of 2"]
+
+
+def test_skills_added_on_the_page_are_their_own_group_and_counted_apart(response) -> None:
+    profile = response.profile.model_copy(update={"skills": [
+        skill("Python", "Python", concept="a"),
+        skill("dbt", "dbt", concept="d").model_copy(update={"added": True}),
+        skill("Zeppelin", None).model_copy(update={"added": True})]})
+
+    report = build_report(response.model_copy(update={"profile": profile}))
+
+    assert [s.label for s in report.skills] == ["Python"]
+    assert [(s.label, s.value, s.recognised) for s in report.added] == [
+        ("dbt", "d", True), ("Zeppelin", "raw:zeppelin", False)]
+    assert report.unrecognised == []
+    figures = {f.label: f.value for f in report.figures}
+    assert figures["Skills recognised"] == "1 of 1" and figures["Added by you"] == "2"
 
 
 def test_abbreviations_are_explained_only_when_the_wording_differs(response) -> None:
@@ -282,7 +317,10 @@ def test_within_reach_and_skills_to_learn_appear_only_when_computed(response) ->
 
     report = report_of(response, match, insights=insights)
 
-    assert report.reach == ["Data engineer at Acme: add dbt and Airflow to reach a strong match."]
+    assert [r.text for r in report.reach] == [
+        "Data engineer at Acme: add dbt and Airflow to reach a strong match."]
+    assert [(t.label, t.value) for t in report.reach[0].skills] == [("dbt", "dbt"),
+                                                                    ("Airflow", "Airflow")]
     assert report.learn == ["dbt: would make 3 more jobs a strong match.",
                             "Go: would make 1 more job a strong match."]
     off = report_of(response, match, insights=insights.model_copy(update={"computed": False}))
@@ -294,7 +332,7 @@ def test_within_reach_without_a_company_has_no_dangling_at(response) -> None:
     insights = Insights(computed=True, within_reach=[
         WithinReach(vacancy_id="j1", missing=[skill("dbt", "dbt")])])
 
-    assert report_of(response, match, insights=insights).reach == [
+    assert [r.text for r in report_of(response, match, insights=insights).reach] == [
         "Data engineer: add dbt to reach a strong match."]
 
 

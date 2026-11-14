@@ -103,6 +103,7 @@ def test_the_sentences_a_person_reads_for_a_bad_request_and_a_limit() -> None:
     assert WEB_DETAILS == {
         "invalid_request": "Choose a PDF or Word file and try again.",
         "rate_limited": "You have uploaded a lot of CVs for now. Try again in {wait}.",
+        "report_expired": "This report can no longer be updated. Please upload your CV again.",
     }
 
 
