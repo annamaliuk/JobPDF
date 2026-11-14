@@ -29,7 +29,6 @@ from jobpdf.ranking.learned import (
     read_feedback,
     write_weights,
 )
-from jobpdf.ranking.score import W_SEMANTIC, W_SKILL
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--feedback", type=Path, required=True)
     parser.add_argument("--out", type=Path, default=WEIGHTS_PATH)
     parser.add_argument("--prior-strength", type=float, default=DEFAULT_PRIOR_STRENGTH,
-                        help="rows the 0.7/0.3 prior is worth (default %(default)s)")
+                        help="rows the hand-set prior is worth (default %(default)s)")
     args = parser.parse_args(argv)
 
     try:
@@ -54,7 +53,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"rows: {summary.n_rows} used ({summary.n_positive} useful), "
           f"{summary.n_skipped} skipped for a missing score")
-    print(f"prior   : skill={W_SKILL} semantic={W_SEMANTIC}  (strength {summary.prior_strength})")
+    print(f"prior   : skill={summary.prior_skill} semantic={round(1 - summary.prior_skill, 2)}  "
+          f"(strength {summary.prior_strength})")
     print(f"learned : skill={summary.w_skill} semantic={summary.w_semantic}")
     print(f"log loss: {summary.log_loss:.4f} learned vs {summary.log_loss_prior:.4f} prior")
     if not summary.informative:

@@ -298,8 +298,8 @@ def test_versions_name_everything_that_produced_the_result(full, analysed) -> No
 
 def test_scoring_explains_the_fit(full) -> None:
     assert full.scoring.scorer == "linear"
-    assert full.scoring.weights == {"skill": 0.7, "semantic": 0.3, "experience": 0.1}
-    assert {"strong_coverage", "partial_coverage", "sem_min"} <= set(full.scoring.thresholds)
+    assert full.scoring.weights == {"skill": 0.40, "semantic": 0.45, "experience": 0.15}
+    assert full.scoring.thresholds == {"strong_fit": 0.70, "partial_fit": 0.50}
 
 
 def test_meta_reports_timings_and_tokens(full) -> None:

@@ -16,7 +16,6 @@ from jobpdf.ranking.insights import (
 )
 from jobpdf.ranking.models import CandidateSkills, SkillRef, VacancyFeatures
 from jobpdf.ranking.score import (
-    SEM_MIN,
     THRESHOLDS,
     Band,
     LinearScorer,
@@ -77,17 +76,22 @@ def names(refs) -> list[str]:
 
 
 # --- the worked example from the plan ----------------------------------------------
-# Weights 0.7 / 0.3, strong at 80% coverage with semantic >= 0.3. The candidate has
-# A to E. v1 needs one skill, v2 two, v3 has low semantic, v4 needs three, v5 is strong.
+# No years stated, so fit = (0.40 x skill + 0.45 x semantic) / 0.85; strong at 70%. The
+# candidate has A to E. v1 needs one skill, v2 two, v3's past work is too far off even with
+# every skill, v4 needs three, v5 is strong.
 
 CANDIDATE = candidate("A", "B", "C", "D", "E")
 EXAMPLE = [
-    (vacancy("v1", "A B C F G"), 0.5),
+    (vacancy("v1", "A B C F G"), 0.7),
     (vacancy("v2", "A B C D E H I J"), 0.6),
-    (vacancy("v3", "A B K L"), 0.2),
-    (vacancy("v4", "A B C D E M N O P Q"), 0.5),
+    (vacancy("v3", "A B C K"), 0.4),
+    (vacancy("v4", "A B C D E M N O P Q"), 0.6),
     (vacancy("v5", "A B"), 0.5),
 ]
+
+
+def fit(skill: float, sem: float) -> float:
+    return (0.40 * skill + 0.45 * sem) / 0.85
 
 
 @pytest.fixture
@@ -99,7 +103,7 @@ def test_the_example_ranks_as_the_plan_says(example) -> None:
     bands = {r.vacancy.id: r.band for r in example.results}
     assert bands == {"v1": B.PARTIAL, "v2": B.PARTIAL, "v3": B.PARTIAL, "v4": B.PARTIAL,
                      "v5": B.STRONG}
-    assert SEM_MIN == 0.3  # the example's numbers assume the JM-24 constants
+    assert THRESHOLDS == {"strong_fit": 0.70, "partial_fit": 0.50}  # the example's numbers
 
 
 def test_within_reach_matches_the_hand_computed_values(example) -> None:
@@ -108,12 +112,12 @@ def test_within_reach_matches_the_hand_computed_values(example) -> None:
     assert [i.vacancy_id for i in items] == ["v1", "v2"]
     v1, v2 = items
     assert names(v1.added) == ["F"]  # F and G both work; the vacancy's first wins
-    assert v1.fit_now == pytest.approx(0.57)  # 0.7 x 3/5 + 0.3 x 0.5
-    assert v1.fit_after == pytest.approx(0.71)  # 0.7 x 4/5 + 0.3 x 0.5
+    assert v1.fit_now == pytest.approx(fit(3 / 5, 0.7))  # 0.65
+    assert v1.fit_after == pytest.approx(fit(4 / 5, 0.7))  # 0.75
     assert (v1.required_matched_count, v1.required_count) == (3, 5)
     assert names(v2.added) == ["H", "I"]
-    assert v2.fit_now == pytest.approx(0.6175)  # 0.7 x 5/8 + 0.3 x 0.6
-    assert v2.fit_after == pytest.approx(0.7925)  # 0.7 x 7/8 + 0.3 x 0.6
+    assert v2.fit_now == pytest.approx(fit(5 / 8, 0.6))  # 0.61; 6/8 gives 0.67
+    assert v2.fit_after == pytest.approx(fit(7 / 8, 0.6))  # 0.73
 
 
 def test_skills_worth_learning_matches_the_hand_computed_values(example) -> None:
@@ -130,7 +134,7 @@ def test_in_demand_matches_the_hand_computed_values(example) -> None:
     items = in_demand(CANDIDATE, working_set(example))
 
     assert [(i.skill.raw, i.count) for i in items] == [
-        ("A", 5), ("B", 5), ("C", 3), ("D", 2), ("E", 2)]
+        ("A", 5), ("B", 5), ("C", 4), ("D", 2), ("E", 2)]
 
 
 def test_compute_insights_puts_it_together(example) -> None:
@@ -153,13 +157,13 @@ def test_no_partial_vacancies_gives_nothing_within_reach() -> None:
     result = compute_insights(cand, ranking)
 
     assert result.within_reach == []
-    assert result.skills_to_learn == []  # one skill alone can't lift 1/4 to 80%
+    assert result.skills_to_learn == []  # one skill alone can't lift 1/4 to 70%
     assert [(i.skill.raw, i.count) for i in result.in_demand] == [("A", 2), ("B", 1)]
 
 
 def test_a_skill_that_unlocks_nothing_is_left_out() -> None:
     cand = candidate("A", "B", "C")
-    ranking = ranked(cand, (vacancy("v", "A B C X Y"), 0.5))  # 3/5: one skill gives 4/5
+    ranking = ranked(cand, (vacancy("v", "A B C X Y"), 0.7))  # 3/5: one skill gives 4/5
 
     learn = skills_worth_learning(cand, working_set(ranking))
     reach = within_reach(cand, working_set(ranking))
@@ -167,7 +171,7 @@ def test_a_skill_that_unlocks_nothing_is_left_out() -> None:
     assert [i.skill.raw for i in learn] == ["X", "Y"]
     assert names(reach[0].added) == ["X"]
 
-    ranking = ranked(cand, (vacancy("v", "A B C W X Y Z"), 0.5))  # 3/7: needs 3
+    ranking = ranked(cand, (vacancy("v", "A B C W X Y Z"), 0.6))  # 3/7: needs 3
     assert skills_worth_learning(cand, working_set(ranking)) == []
     assert within_reach(cand, working_set(ranking)) == []
 
@@ -185,8 +189,8 @@ def test_equal_vacancies_sort_by_id() -> None:
 def test_fewer_skills_to_add_comes_before_a_higher_fit() -> None:
     cand = candidate("A", "B", "C", "D", "E")
     ranking = ranked(cand,
-                     (vacancy("two", "A B C D E H I J"), 1.0),  # higher fit, needs two
-                     (vacancy("one", "A B C F G"), 0.3))  # needs one
+                     (vacancy("two", "A B C D E H I J"), 0.65),  # higher fit, needs two
+                     (vacancy("one", "A B C F G"), 0.62))  # needs one
 
     items = within_reach(cand, working_set(ranking))
 
@@ -221,14 +225,14 @@ def test_skills_that_unlock_more_come_first() -> None:
 
 def test_the_semantic_score_stays_as_it_was() -> None:
     cand = candidate("A", "B", "C")
-    low = SEM_MIN - 0.1
+    low = 0.3
     ranking = ranked(cand, (vacancy("low", "A B C X"), low), (vacancy("ok", "A B C Y"), 0.5))
 
     result = compute_insights(cand, ranking)
 
     assert [i.vacancy_id for i in result.within_reach] == ["ok"]  # full coverage is not enough
     assert [i.skill.raw for i in result.skills_to_learn] == ["Y"]
-    assert result.within_reach[0].fit_after == pytest.approx(0.7 * 1.0 + 0.3 * 0.5)
+    assert result.within_reach[0].fit_after == pytest.approx(fit(1.0, 0.5))
 
 
 def test_the_experience_part_stays_as_it_was() -> None:
@@ -238,22 +242,22 @@ def test_the_experience_part_stays_as_it_was() -> None:
     result = compute_insights(cand, ranking)
 
     assert result.within_reach[0].fit_after == pytest.approx(
-        0.9 * (0.7 * 1.0 + 0.3 * 0.5) + 0.1 * 0.6)
+        0.40 * 1.0 + 0.45 * 0.5 + 0.15 * 0.6)
 
 
 def test_a_missing_semantic_score_does_not_block_strong() -> None:
     cand = candidate("A", "B", "C")
-    ranking = ranked(cand, (vacancy("v", "A B C X"), None))
+    ranking = ranked(cand, (vacancy("v", "A B C X Y"), None))
 
     items = within_reach(cand, working_set(ranking))
 
-    assert items[0].fit_after == pytest.approx(1.0)  # skills only when semantic is missing
+    assert items[0].fit_after == pytest.approx(0.8)  # skills only when semantic is missing
 
 
 def test_a_capped_vacancy_is_never_within_reach() -> None:
     cand = candidate("A", "B", "C", "D")
     adjustments = {"capped": VacancyAdjustment(band_cap=B.PARTIAL, reasons=["location"])}
-    ranking = ranked(cand, (vacancy("capped", "A B C D X"), 0.5), adjustments=adjustments)
+    ranking = ranked(cand, (vacancy("capped", "A B C D X"), 0.7), adjustments=adjustments)
     assert (ranking.results[0].band, ranking.results[0].band_before_cap) == (B.PARTIAL,
                                                                             B.STRONG)
 
@@ -353,13 +357,11 @@ def test_the_candidate_is_not_changed(example) -> None:
     assert CANDIDATE.model_dump() == before
 
 
-def test_another_scorer_changes_fits_but_not_which_jobs() -> None:
-    skills_only = LinearScorer(w_skill=1.0, w_semantic=0.0)
-    default = compute_insights(CANDIDATE, ranked(CANDIDATE, *EXAMPLE))
+def test_the_what_if_uses_the_scorer_it_is_given() -> None:
+    skills_only = LinearScorer(1.0, 0.0, 0.0)
     other = compute_insights(CANDIDATE, ranked(CANDIDATE, *EXAMPLE, scorer=skills_only),
                              scorer=skills_only)
 
-    assert [i.vacancy_id for i in other.within_reach] == [i.vacancy_id
-                                                          for i in default.within_reach]
-    assert other.within_reach[0].fit_after == pytest.approx(0.8)  # 4/5, skills only
-    assert other.skills_to_learn == default.skills_to_learn
+    # Skills alone: v3 (3/4) is already strong, v2 needs one skill, v4 two.
+    assert [i.vacancy_id for i in other.within_reach] == ["v2", "v1", "v4"]
+    assert other.within_reach[1].fit_after == pytest.approx(0.8)  # v1 at 4/5

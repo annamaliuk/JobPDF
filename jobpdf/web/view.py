@@ -400,23 +400,21 @@ def _hidden_notes(response: AnalysisResponse, home_country: str | None) -> list[
 
 def _scoring(response: AnalysisResponse) -> list[str]:
     weights, limits = response.scoring.weights, response.scoring.thresholds
-    skill, experience = weights.get("skill"), weights.get("semantic")
-    if skill is not None and experience is not None:
-        lines = [f"Each job's fit is {percent(skill)} your skills against the skills it asks "
-                 f"for and {percent(experience)} how closely your past work resembles the "
-                 "job's duties."]
+    past, skill, years = weights.get("semantic"), weights.get("skill"), weights.get("experience")
+    if past is not None and skill is not None and years:
+        lines = [f"Each job's fit is {percent(past)} how closely your past work resembles the "
+                 f"job's duties, {percent(skill)} your skills against the skills it asks for, "
+                 f"and {percent(years)} how close you come to the years of experience it asks "
+                 "for.",
+                 "When a job doesn't state the years, or your CV's dates can't be counted, the "
+                 f"other two parts share that {percent(years)}."]
     else:
-        lines = ["Each job's fit is worked out from your skills and your past work."]
-    years = weights.get("experience")
-    if years:
-        lines.append(f"When a job states the years of experience it wants, {percent(years)} of "
-                     "its fit is how close your CV comes to them.")
-    strong, partial = limits.get("strong_coverage"), limits.get("partial_coverage")
+        lines = ["Each job's fit is worked out from your past work, your skills and your years "
+                 "of experience."]
+    strong, partial = limits.get("strong_fit"), limits.get("partial_fit")
     if strong is not None and partial is not None:
-        lines.append(
-            f"A strong match means you have at least {percent(strong)} of the required skills "
-            f"and your experience is not far off. A partial match means at least "
-            f"{percent(partial)}. Anything lower is weak.")
+        lines.append(f"A strong match has a fit of {percent(strong)} or more, a partial match "
+                     f"{percent(partial)} or more. Anything lower is weak.")
         lines.append(f"A job that asks for at least {EXPERIENCE_MARGIN_MONTHS / 12:g} more years "
                      "of experience than your CV shows is at most a partial match.")
     if response.scoring.semantic_calibrated is not True:
