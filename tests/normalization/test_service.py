@@ -75,9 +75,9 @@ class CountingMatcher(SkillMatcher):
         super().__init__(*args, **kwargs)
         self.calls: list[list[str]] = []
 
-    def match_many(self, raws, context=None):
+    def match_many(self, raws, context=None, *, use_llm=True):
         self.calls.append(list(raws))
-        return super().match_many(raws, context)
+        return super().match_many(raws, context, use_llm=use_llm)
 
 
 def versions() -> ServiceVersions:

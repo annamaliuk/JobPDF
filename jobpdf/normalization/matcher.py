@@ -107,11 +107,14 @@ class SkillMatcher:
     def match(self, raw: str, context: str | None = None) -> SkillMatch:
         return self.match_many([raw], context)[0]
 
-    def match_many(self, raws: Sequence[str], context: str | None = None) -> list[SkillMatch]:
+    def match_many(self, raws: Sequence[str], context: str | None = None, *,
+                   use_llm: bool = True) -> list[SkillMatch]:
         """Exactly one result per input, in input order; duplicates are matched once.
 
         ``context`` is a short hint for the LLM such as "CV skills section"; it
-        must never carry personal data.
+        must never carry personal data. ``use_llm=False`` stops after the exact and
+        vector tiers: what they leave undecided is unmatched (and not cached), as when
+        no LLM is configured.
         """
         started = time.perf_counter()
         stats: Counter[str] = Counter()
@@ -124,7 +127,10 @@ class SkillMatcher:
         todo = self._from_cache(list(pending.values()), stats)
         to_vector, ambiguous = self._exact(todo, stats)
         undecided = self._vector(to_vector, stats)
-        self._llm(ambiguous + undecided, context, stats)
+        if use_llm:
+            self._llm(ambiguous + undecided, context, stats)
+        else:
+            self._give_up(ambiguous + undecided, LLM_UNAVAILABLE, stats)
 
         results: list[SkillMatch] = []
         for raw, norm in zip(raws, normalized, strict=True):

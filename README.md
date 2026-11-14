@@ -269,7 +269,8 @@ five steps (reading the file, finding skills, matching them to the standard list
 current jobs, building the report) and marks each as waiting, in progress or done. Then the report
 appears: the figures from the CV, the best matches with "You have 7 of 9 required skills" and
 what is missing, the skills that were found and how abbreviations were read, every match in a
-table, notes on data quality and how the fit is scored. Close the page and it is gone.
+table, notes on data quality and how the fit is scored. Skills the analysis missed can be added
+on the page itself (see "Your skills and updates" below). Close the page and it is gone.
 
 - **One request, nothing stored.** The page is made by the server (`jobpdf/web/`, Jinja2
   templates, one stylesheet and one small script, no build step). It runs the same analysis as
@@ -335,6 +336,19 @@ table, notes on data quality and how the fit is scored. Close the page and it is
   match; it is never hidden for this, and its card says why. A CV with no jobs counts as 0
   months. When a job in the CV has a date that could not be counted, the total would be too
   low, so no vacancy is capped. This applies to the web page and the JSON API alike.
+- **Your skills and updates.** The report starts with the skills found in the CV (the skills
+  list and each job's skills), in groups: used for matching, "please check" (matched with low
+  confidence, each with a remove tick and how it was read), and not recognised (these count
+  only when a vacancy writes them the same way). Under them, "Add skills we missed" takes up to
+  20 names, and each "Within reach" line has an "I have this" tick. "Update matches" posts a
+  plain form to `POST /report/update`: the page carries what ranking needs in a hidden field
+  (the matched skills, the past-work vectors, the counted months, the country and language;
+  base64 JSON, at most 256 KB, refused after a ranking version change), and the server
+  re-ranks the vacancies it has now with the same code as the first run. No CV, nothing stored
+  and no model call: typed skills are matched by exact name and vector search only
+  (`jobpdf/web/update.py`). An update is not counted against the upload limit; it still takes
+  one of the analysis slots. "Within reach" and "Skills worth learning" (JM-42) now appear on
+  every report, and the JSON API's `insights` is filled.
 - **Experience in the fit.** When a vacancy states the years it wants, 10% of its fit
   (`W_EXPERIENCE`) is how close the CV comes: 1 when it has them, falling in a straight line to
   0 at 2.5 years short. Skills and past work share the rest 7:3, so a vacancy that states no

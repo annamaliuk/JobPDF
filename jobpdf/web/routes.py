@@ -4,6 +4,8 @@
     POST /report   multipart ``file`` -> the report as an HTML page (one request, nothing stored);
                    with ``Accept: text/event-stream`` the same request streams progress steps
                    and ends with the page (JM-44, see ``progress.py``)
+    POST /report/update  the report's own form (JM-53): skills added or removed, re-ranked from
+                   what the page carries, without the CV and without a model call (``update.py``)
     GET  /static/  one stylesheet and one small script
 
 There is no login and no key in the browser. A key in a page's script is not a secret, so this
@@ -41,14 +43,15 @@ from markupsafe import Markup, escape
 from starlette.staticfiles import StaticFiles
 
 from jobpdf.api import app as api  # shares its form reading, limits and pipeline run
-from jobpdf.api.access import AccessError
-from jobpdf.api.response import build_response
+from jobpdf.api.access import AccessError, check_declared_size
+from jobpdf.api.response import AnalysisResponse, build_response
 from jobpdf.normalization import skill_names
+from jobpdf.normalization.service import get_normalization_service
 from jobpdf.pipeline import MAX_UPLOAD_BYTES, PipelineError, PipelineResult
 from jobpdf.places import COUNTRY_NAMES
 from jobpdf.ranking.eligibility import normalize_country
-from jobpdf.web import progress
-from jobpdf.web.view import build_report
+from jobpdf.web import progress, update
+from jobpdf.web.view import Report, build_report
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +59,9 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 TEMPLATE_DIR = PACKAGE_DIR / "templates"
 STATIC_DIR = PACKAGE_DIR / "static"
 REPORT_PATH = "/report"
+UPDATE_PATH = "/report/update"
+UPDATE_FIELDS = ("state", "skills")  # plus the repeated ticks "remove" and "have"
+MAX_UPDATE_BYTES = update.MAX_STATE_CHARS + 16 * 1024  # the state plus the typed skills and ticks
 HOME_COUNTRY_FIELD = "home_country"  # the form's "hide on-site jobs outside" choice; "" = none
 UNKNOWN_CLIENT = "0.0.0.0"  # one shared bucket for a request with no usable address
 
@@ -80,6 +86,9 @@ PAGE_HEADERS = {
 WEB_DETAILS: dict[str, str] = {
     api.INVALID_REQUEST: "Choose a PDF or Word file and try again.",
     "rate_limited": "You have uploaded a lot of CVs for now. Try again in {wait}.",
+    update.REPORT_EXPIRED: "This report can no longer be updated. Please upload your CV again.",
+    update.TOO_MANY_SKILLS: (f"Add up to {update.MAX_ADDED_SKILLS} skills at a time, each up to "
+                             f"{update.MAX_SKILL_CHARS} characters."),
 }
 
 _templates = Environment(
@@ -163,19 +172,78 @@ def register_web(app: FastAPI) -> None:
             return _error_page(api.INTERNAL_ERROR, 500)
         return HTMLResponse(html, headers=PAGE_HEADERS)
 
+    app.add_api_route(UPDATE_PATH, _update, methods=["POST"], response_class=HTMLResponse,
+                      include_in_schema=False)
+
 
 def _report_html(svc: api.Services, result: PipelineResult, language: str,
                  home: str | None = None) -> str:
-    """The report page. Skill names are Ukrainian only when asked for; if the names cannot be
-    loaded the page is made in English (``skill_names`` logs why)."""
+    """The report page, carrying what its update form needs (JM-53)."""
+    state = update.state_from_result(result, home, language)
+    return _state_page(svc, build_response(result), state)
+
+
+def _state_page(svc: api.Services, response: AnalysisResponse, state: update.ReportState,
+                updated: bool = False) -> str:
+    """Skill names are Ukrainian only when asked for; if the names cannot be loaded the page is
+    made in English (``skill_names`` logs why)."""
     names: Mapping[str, str] | None = None
-    if language == skill_names.UKRAINIAN:
+    if state.language == skill_names.UKRAINIAN:
         try:
             names = svc.skill_names()
         except Exception as exc:  # never a reason to lose the report
             log.warning("ukrainian skill names unavailable (%s)", type(exc).__name__)
-    return _render("report.html",
-                   report=build_report(build_response(result), names, home))
+    return render_report(build_report(response, names, state.home_country),
+                         update.encode_state(state), updated)
+
+
+def render_report(report: Report, state: str, updated: bool = False) -> str:
+    return _render("report.html", report=report, state=state, updated=updated,
+                   update_path=UPDATE_PATH, max_skills=update.MAX_ADDED_SKILLS,
+                   max_typed=update.MAX_ADDED_SKILLS * (update.MAX_SKILL_CHARS + 2))
+
+
+async def _update(request: Request) -> HTMLResponse:
+    """The report again, with the skills the person added or removed. No CV, no model call and
+    no per-address limit (it costs a vector search and a re-rank); the size cap and the limit on
+    analyses running at once still apply."""
+    svc: api.Services = request.app.state.services
+    try:
+        check_declared_size(api._declared_length(request), MAX_UPDATE_BYTES)
+        form = await request.form()
+    except AccessError as exc:
+        return _error_page(exc.code, exc.status)
+    except Exception:  # over the body cap, or not a form at all
+        return _error_page(update.REPORT_EXPIRED, 400)
+    try:
+        fields = {name: v if isinstance(v := form.get(name), str) else "" for name in UPDATE_FIELDS}
+        remove = [v for v in form.getlist("remove") if isinstance(v, str)]
+        have = [v for v in form.getlist("have") if isinstance(v, str)]
+    finally:
+        await form.close()
+    try:
+        state = update.decode_state(fields["state"])
+        add = update.typed_skills(fields["skills"], have)
+    except update.UpdateError as exc:
+        return _error_page(exc.code, 400)
+
+    if not svc.slots.acquire(blocking=False):
+        svc.recorder.record_access_denied(api.BUSY)
+        return _error_page(api.BUSY, 503, retry_after=api.BUSY_RETRY_AFTER_S)
+    try:
+        def work() -> str:
+            new_state, response = update.update_report(
+                state, add, remove, vacancies=svc.vacancies(), scorer=svc.scorer,
+                normalizer=svc.normalizer or get_normalization_service())
+            return _state_page(svc, response, new_state, updated=True)
+
+        html = await run_in_threadpool(work)
+    except Exception as exc:  # never echo what was sent
+        log.error("report update failed (%s)", type(exc).__name__)
+        return _error_page(api.INTERNAL_ERROR, 500)
+    finally:
+        svc.slots.release()
+    return HTMLResponse(html, headers=PAGE_HEADERS)
 
 
 def _stream_report(svc: api.Services, content: bytes, filename: str, language: str,

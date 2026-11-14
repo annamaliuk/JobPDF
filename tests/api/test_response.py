@@ -14,6 +14,7 @@ from jobpdf.api.response import (
     WarningOut,
     WithinReach,
     build_response,
+    insights_out,
     skill_from_ref,
     unknown_codes,
     warning_out,
@@ -306,8 +307,15 @@ def test_meta_reports_timings_and_tokens(full) -> None:
     assert "total" in full.meta.timings_ms
 
 
-def test_insights_are_empty_until_jm_42_fills_them(full) -> None:
-    assert full.insights == Insights() and full.insights.computed is False
+def test_the_pipelines_insights_are_in_the_response(analysed, full) -> None:
+    assert full.insights.computed is True
+    assert full.insights == insights_out(analysed.insights)
+
+
+def test_a_result_without_insights_gets_empty_ones(analysed) -> None:
+    bare = analysed.model_copy(update={"insights": None})
+
+    assert build_response(bare).insights == Insights()
 
 
 def test_given_insights_are_passed_through(analysed) -> None:
