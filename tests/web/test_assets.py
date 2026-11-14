@@ -62,7 +62,9 @@ def test_the_script_keeps_nothing_and_asks_nothing_but_the_form_post() -> None:
         assert word not in JS, word
     assert JS.count("fetch(") == 1  # the one request: the form's own post (JM-44)
     call = JS.split("fetch(", 1)[1].split("})", 1)[0]
-    assert call.startswith("form.action,") and 'method: "POST"' in call
+    assert call.startswith("action,") and 'method: "POST"' in call
+    # ... to one of the form's own addresses: its action, or the sample button's (JM-52)
+    assert "submitStreaming(sample ? submitter.formAction : form.action, sample)" in JS
     assert 'Accept: "text/event-stream"' in call and 'credentials: "omit"' in call
 
 
@@ -76,7 +78,8 @@ def test_every_step_the_script_can_be_told_about_is_a_step_of_the_page() -> None
 
     html = routes._templates.get_template("index.html").render(
         steps=progress.STEPS, max_bytes=1, field="file", path="/report", language_field="lang",
-        language="en", home_field="home_country", countries=[("UA", "Ukraine")])
+        language="en", home_field="home_country", countries=[("UA", "Ukraine")],
+        sample_path=None, sample_cv="/sample-cv")
 
     assert re.findall(r'data-step="([a-z]+)"', html) == list(progress.STEP_IDS)
     assert 'data-state="waiting"' in html  # every step starts plain; the script sets the others

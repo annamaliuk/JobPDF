@@ -1,13 +1,16 @@
-// JobPDF upload page (JM-43, progress steps JM-44). Optional: the form works without this script.
+// JobPDF upload page (JM-43, progress steps JM-44, sample CV JM-52). Optional: the form works
+// without this script.
 // It checks the file before sending it. Where the browser can stream, it posts the CV itself and
 // shows the steps of the analysis as they happen, then puts the report on this page. Nothing is
-// kept in the browser: no storage, no cookie, and the only request goes to the form's own address.
+// kept in the browser: no storage, no cookie, and requests go only to the form's own addresses.
+// The "Try a sample CV" button posts the form's choices to its own address and never the file.
 (function () {
   "use strict";
   var form = document.getElementById("upload");
   if (!form) return;
   var input = form.querySelector('input[type="file"]');
-  var button = form.querySelector("button");
+  var buttons = form.querySelectorAll("button");
+  var clicked = null; // the button that sent the form, for browsers without event.submitter
   var status = document.getElementById("status");
   var panel = document.getElementById("progress");
   var maxBytes = Number(form.getAttribute("data-max-bytes")) || 0;
@@ -179,11 +182,17 @@
     return pump();
   }
 
-  function submitStreaming() {
+  function setButtons(disabled) {
+    for (var i = 0; i < buttons.length; i++) buttons[i].disabled = disabled;
+  }
+
+  function submitStreaming(action, sample) {
+    var body = new FormData(form);
+    if (sample) body.delete(input.name); // the sample needs only the choices, never the file
     startProgress();
-    fetch(form.action, {
+    fetch(action, {
       method: "POST",
-      body: new FormData(form),
+      body: body,
       headers: { Accept: "text/event-stream" },
       credentials: "omit",
       cache: "no-store"
@@ -204,26 +213,34 @@
     say(found, Boolean(found));
   });
 
+  for (var b = 0; b < buttons.length; b++) {
+    buttons[b].addEventListener("click", function (event) { clicked = event.currentTarget; });
+  }
+
   form.addEventListener("submit", function (event) {
-    var found = problem();
+    var submitter = event.submitter || clicked;
+    var sample = Boolean(submitter && submitter.hasAttribute("formaction"));
+    var found = sample ? "" : problem();
     if (found) {
       event.preventDefault();
       say(found, true);
       return;
     }
-    button.disabled = true;
+    setButtons(true);
     if (canStream) {
       event.preventDefault();
-      submitStreaming();
+      submitStreaming(sample ? submitter.formAction : form.action, sample);
       return;
     }
-    say("Reading your CV. This usually takes 10 to 30 seconds.", false);
+    say(sample ? "Reading the sample CV. This usually takes 10 to 30 seconds."
+      : "Reading your CV. This usually takes 10 to 30 seconds.", false);
   });
 
   // Coming back with the browser's Back button restores the page as it was left.
   window.addEventListener("pageshow", function () {
     stopTimer();
-    button.disabled = false;
+    clicked = null;
+    setButtons(false);
     say("", false);
     if (panel) {
       panel.hidden = true;

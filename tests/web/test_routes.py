@@ -103,6 +103,7 @@ def test_the_sentences_a_person_reads_for_a_bad_request_and_a_limit() -> None:
     assert WEB_DETAILS == {
         "invalid_request": "Choose a PDF or Word file and try again.",
         "rate_limited": "You have uploaded a lot of CVs for now. Try again in {wait}.",
+        "sample_unavailable": "There is no sample CV on this server. Upload your own CV instead.",
     }
 
 
@@ -314,7 +315,7 @@ def test_an_unexpected_error_is_a_generic_page_that_repeats_nothing(caplog) -> N
 
 
 def test_a_page_that_cannot_be_drawn_is_the_same_generic_page(monkeypatch, caplog, client) -> None:
-    def broken(response, names=None, home=None):
+    def broken(response, names=None, home=None, sample=False):
         raise KeyError(SECRETS[0])
 
     monkeypatch.setattr(routes, "build_report", broken)

@@ -335,8 +335,27 @@ table, notes on data quality and how the fit is scored. Close the page and it is
   match; it is never hidden for this, and its card says why. A CV with no jobs counts as 0
   months. When a job in the CV has a date that could not be counted, the total would be too
   low, so no vacancy is capped. This applies to the web page and the JSON API alike.
+- **Try a sample CV.** When the app has a sample CV, the upload form shows a second button, "Try
+  a sample CV", and a link to see that CV. The button runs the whole pipeline on the sample with
+  the choices on the form (skill names, "Where do you live?") and shows the usual report, headed
+  "Report for a sample CV" with a line saying it is not the visitor's. It goes to
+  `POST /report/sample` (no file is sent; one chosen anyway is ignored) and shares everything
+  with an upload: the per-address limit, the limit on analyses at once, the progress steps and
+  the metrics. `GET /sample-cv` shows the file itself.
+  The sample is `jobpdf/web/sample/sample_cv.pdf` (or `sample_cv.docx`), or the file named in
+  `SAMPLE_CV_PATH`; it must be a PDF or DOCX of at most 5 MB. It lives inside `jobpdf/` because
+  the Docker image does not copy `data/`. Without a usable file the button and the link do not
+  appear, the two routes answer 404, and the log says why (`sample CV off: <code>`) once at start.
+  **The repository is public**: the sample must be made up or scrubbed, with no real name,
+  address, phone, email or photo, because anyone can download it from the repository and from
+  `/sample-cv`.
+  The model's answers for the sample are kept in memory (`jobpdf/api/sample.py`) for the life of
+  the process: the first sample report after a start costs one model call, later ones none, and
+  every visitor sees the same profile. The ranking is still computed each time, against the
+  vacancies of the moment. Uploaded CVs never go through this memory, and nothing is written to
+  disk.
 - **One page may make requests.** `GET /` is sent with `connect-src 'self'` so its script can
-  post to `/report`; every other page keeps `connect-src 'none'`.
+  post to `/report` and `/report/sample`; every other page keeps `connect-src 'none'`.
 - The page is in English. It is not part of the JSON API: `/docs` does not list it.
 
 ---

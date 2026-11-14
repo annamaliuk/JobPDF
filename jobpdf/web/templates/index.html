@@ -43,7 +43,17 @@
     <p id="{{ home_field }}-hint" class="quiet hint">Choose the country you live in to leave out jobs that
       need you in an office, or part of the week in one, in another country, and remote jobs open only
       to people in other countries. Remote jobs open to your country stay.</p>
-    <button type="submit">Check my CV</button>
+    <div class="actions">
+      <button type="submit">Check my CV</button>
+{% if sample_path %}
+      <button type="submit" class="secondary" formaction="{{ sample_path }}" formnovalidate
+              aria-describedby="sample-hint">Try a sample CV</button>
+{% endif %}
+    </div>
+{% if sample_path %}
+    <p id="sample-hint" class="quiet hint">No CV at hand? Try the app on a made-up CV with the choices
+      above. <a href="{{ sample_cv }}" target="_blank" rel="noopener">See the sample CV</a>.</p>
+{% endif %}
     <p id="status" class="status" role="status" aria-live="polite"></p>
   </form>
 </section>
