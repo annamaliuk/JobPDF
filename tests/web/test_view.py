@@ -353,7 +353,8 @@ def test_notes_use_the_fixed_sentences_and_count_what_was_left_out(response) -> 
 def test_the_scoring_text_is_built_from_the_numbers_the_response_carries(response) -> None:
     scoring = response.scoring.model_copy(update={
         "weights": {"skill": 0.40, "semantic": 0.45, "experience": 0.15},
-        "thresholds": {"strong_fit": 0.70, "partial_fit": 0.50},
+        "thresholds": {"strong_fit": 0.70, "strong_coverage": 0.8, "partial_fit": 0.65,
+                       "partial_coverage": 0.5},
         "semantic_calibrated": True})
 
     lines = build_report(response.model_copy(update={"scoring": scoring})).scoring
@@ -363,8 +364,9 @@ def test_the_scoring_text_is_built_from_the_numbers_the_response_carries(respons
                         "close you come to the years of experience it asks for.")
     assert lines[1] == ("When a job doesn't state the years, or your CV's dates can't be "
                         "counted, the other two parts share that 15%.")
-    assert lines[2] == ("A strong match has a fit of 70% or more, a partial match 50% or more. "
-                        "Anything lower is weak.")
+    assert lines[2] == ("A strong match has a fit of 70% or more and at least 80% of the "
+                        "required skills. A partial match has a fit of 65% or more and at least "
+                        "50% of them. Anything lower is weak.")
     assert lines[3] == ("A job that asks for at least 2.5 more years of experience than your CV "
                         "shows is at most a partial match.")
     assert len(lines) == 4  # calibrated: no "approximate" note

@@ -2,10 +2,11 @@
 
 fit = W_SKILL x skill overlap + W_SEMANTIC x past-work similarity + W_EXPERIENCE x having
 the years the vacancy asks for (JM-50), averaged over the parts that are known, and a band
-(strong / partial / weak / unscored) from the fit. Every number that produces a result is
-kept on it, so the report (JM-41) can explain the formula exactly. Two hooks for later
-tickets: per-vacancy adjustments (hide or cap the band, for eligibility checks) and a
-replaceable ``Scorer`` (learned weights, JM-27). Pure Python: no database, network or LLM.
+(strong / partial / weak / unscored) from the fit and the share of required skills. Every
+number that produces a result is kept on it, so the report (JM-41) can explain the formula
+exactly. Two hooks for later tickets: per-vacancy adjustments (hide or cap the band, for
+eligibility checks) and a replaceable ``Scorer`` (learned weights, JM-27). Pure Python: no
+database, network or LLM.
 """
 
 from __future__ import annotations
@@ -37,8 +38,11 @@ log = logging.getLogger(__name__)
 W_SKILL = 0.40
 W_SEMANTIC = 0.45
 W_EXPERIENCE = 0.15
+# Bands need the fit and the share of required skills (JM-56, tuned on JM-25's pairs with e5).
 STRONG_FIT = 0.70
-PARTIAL_FIT = 0.50
+STRONG_COVERAGE = 0.8
+PARTIAL_FIT = 0.65
+PARTIAL_COVERAGE = 0.5
 EXPERIENCE_MARGIN_MONTHS = 30  # this far short: the experience part is 0 (JM-47 caps the band)
 
 # Warning codes on a FitResult.
@@ -147,26 +151,36 @@ def fit_warnings(components: FitComponents, fit: float | None) -> list[str]:
     return []
 
 
+def skill_coverage(overlap: SkillOverlap) -> float | None:
+    """The share of required skills the CV has; the overlap score when the vacancy lists only
+    nice-to-have skills; None when it lists none."""
+    return overlap.required_coverage if overlap.required_coverage is not None else overlap.score
+
+
 def assign_band(
     fit: float | None,
-    has_skills: bool,
+    coverage: float | None,
     cap: Band | None = None,
     *,
     strong_fit: float = STRONG_FIT,
+    strong_coverage: float = STRONG_COVERAGE,
     partial_fit: float = PARTIAL_FIT,
+    partial_coverage: float = PARTIAL_COVERAGE,
 ) -> tuple[Band, Band]:
-    """(band, band_before_cap) from the fit. Public so "what if you learned X" (JM-42) uses
-    the exact same rule as the ranked cards.
+    """(band, band_before_cap) from the fit and ``skill_coverage``. Public so "what if you
+    learned X" (JM-42) uses the exact same rule as the ranked cards.
 
-    A vacancy that lists no skills is at most "partial", because nothing confirms the CV
-    meets its requirements. The threshold arguments exist for JM-26's threshold search;
-    production uses the module constants.
+    A vacancy that lists no skills (coverage None) is at most "partial", because nothing
+    confirms the CV meets its requirements. The threshold arguments exist for JM-26's
+    threshold search; production uses the module constants.
     """
     if fit is None:
         band = Band.UNSCORED
-    elif fit >= strong_fit and has_skills:
+    elif coverage is None:
+        band = Band.PARTIAL if fit >= partial_fit else Band.WEAK
+    elif fit >= strong_fit and coverage >= strong_coverage:
         band = Band.STRONG
-    elif fit >= partial_fit:
+    elif fit >= partial_fit and coverage >= partial_coverage:
         band = Band.PARTIAL
     else:
         band = Band.WEAK
@@ -200,13 +214,14 @@ class RankingResult(_Frozen):
     hidden_count: int
     scorer_name: str
     weights: dict[str, float]  # e.g. {"skill": 0.4, "semantic": 0.45, "experience": 0.15}
-    thresholds: dict[str, float]  # STRONG_FIT, PARTIAL_FIT
+    thresholds: dict[str, float]  # THRESHOLDS
     semantic_calibrated: bool | None  # None when no semantic scores were computed
     ranking_version: str
     warnings: list[str]  # codes only
 
 
-THRESHOLDS = {"strong_fit": STRONG_FIT, "partial_fit": PARTIAL_FIT}
+THRESHOLDS = {"strong_fit": STRONG_FIT, "strong_coverage": STRONG_COVERAGE,
+              "partial_fit": PARTIAL_FIT, "partial_coverage": PARTIAL_COVERAGE}
 _DEFAULT_SCORER = LinearScorer()
 
 
@@ -292,7 +307,7 @@ def score_vacancy(
         experience=experience,
     )
     fit = scorer.score(components)
-    band, band_before_cap = assign_band(fit, overlap.score is not None, adjustment.band_cap)
+    band, band_before_cap = assign_band(fit, skill_coverage(overlap), adjustment.band_cap)
     warnings = fit_warnings(components, fit)
     if band_before_cap is Band.STRONG and components.semantic is None:
         warnings.append(BAND_WITHOUT_SEMANTIC)

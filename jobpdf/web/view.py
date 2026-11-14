@@ -412,9 +412,12 @@ def _scoring(response: AnalysisResponse) -> list[str]:
         lines = ["Each job's fit is worked out from your past work, your skills and your years "
                  "of experience."]
     strong, partial = limits.get("strong_fit"), limits.get("partial_fit")
-    if strong is not None and partial is not None:
-        lines.append(f"A strong match has a fit of {percent(strong)} or more, a partial match "
-                     f"{percent(partial)} or more. Anything lower is weak.")
+    strong_skills, partial_skills = limits.get("strong_coverage"), limits.get("partial_coverage")
+    if None not in (strong, partial, strong_skills, partial_skills):
+        lines.append(f"A strong match has a fit of {percent(strong)} or more and at least "
+                     f"{percent(strong_skills)} of the required skills. A partial match has a "
+                     f"fit of {percent(partial)} or more and at least {percent(partial_skills)} "
+                     "of them. Anything lower is weak.")
         lines.append(f"A job that asks for at least {EXPERIENCE_MARGIN_MONTHS / 12:g} more years "
                      "of experience than your CV shows is at most a partial match.")
     if response.scoring.semantic_calibrated is not True:

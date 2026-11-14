@@ -6,14 +6,17 @@ import pytest
 
 from jobpdf.extraction.schema import ExtractedJob, ExtractedProfile, SkillMention
 from jobpdf.ranking.models import RANKING_VERSION, CandidateSkills, SkillRef, VacancyFeatures
+from jobpdf.ranking.overlap import SkillOverlap
 from jobpdf.ranking.score import (
     BAND_ORDER,
     BAND_WITHOUT_SEMANTIC,
     DUPLICATE_VACANCY_ID,
+    PARTIAL_COVERAGE,
     PARTIAL_FIT,
     SEMANTIC_MISSING,
     SEMANTIC_UNAVAILABLE,
     SKILL_MISSING,
+    STRONG_COVERAGE,
     STRONG_FIT,
     UNSCORED,
     W_EXPERIENCE,
@@ -30,6 +33,7 @@ from jobpdf.ranking.score import (
     experience_fit,
     fit_warnings,
     rank_vacancies,
+    skill_coverage,
 )
 from jobpdf.ranking.semantic import (
     VACANCY_TEXT_VERSION,
@@ -113,7 +117,7 @@ def test_float_rounding_in_weights_is_accepted() -> None:
 
 
 def test_thresholds() -> None:
-    assert (STRONG_FIT, PARTIAL_FIT) == (0.70, 0.50)
+    assert (STRONG_FIT, STRONG_COVERAGE, PARTIAL_FIT, PARTIAL_COVERAGE) == (0.70, 0.8, 0.65, 0.5)
     assert sorted(Band, key=BAND_ORDER.get) == [B.STRONG, B.PARTIAL, B.WEAK, B.UNSCORED]
 
 
@@ -123,8 +127,17 @@ def test_thresholds() -> None:
      (PARTIAL_FIT, B.PARTIAL), (PARTIAL_FIT - 1e-9, B.WEAK), (0.0, B.WEAK),
      (None, B.UNSCORED)],
 )
-def test_band_boundaries(fit, band: Band) -> None:
-    assert assign_band(fit, True) == (band, band)
+def test_fit_boundaries(fit, band: Band) -> None:
+    assert assign_band(fit, 1.0) == (band, band)
+
+
+@pytest.mark.parametrize(
+    ("coverage", "band"),
+    [(STRONG_COVERAGE, B.STRONG), (STRONG_COVERAGE - 1e-9, B.PARTIAL),
+     (PARTIAL_COVERAGE, B.PARTIAL), (PARTIAL_COVERAGE - 1e-9, B.WEAK)],
+)
+def test_skill_coverage_boundaries(coverage, band: Band) -> None:
+    assert assign_band(0.9, coverage) == (band, band)
 
 
 @pytest.mark.parametrize(
@@ -133,18 +146,31 @@ def test_band_boundaries(fit, band: Band) -> None:
      (None, B.UNSCORED)],
 )
 def test_vacancy_without_skills_is_at_most_partial(fit, band: Band) -> None:
-    assert assign_band(fit, False)[0] is band
+    assert assign_band(fit, None)[0] is band
 
 
 @pytest.mark.parametrize(
     ("skill", "semantic", "band"),
-    [(1.0, 0.1, B.PARTIAL), (0.5, 0.9, B.STRONG), (0.2, 1.0, B.PARTIAL)],
-    ids=["all_skills_unrelated_work", "half_skills_right_background", "title_only"],
+    [(1.0, 0.1, B.WEAK), (0.5, 0.9, B.PARTIAL), (0.2, 1.0, B.WEAK), (0.8, 0.9, B.STRONG)],
+    ids=["all_skills_unrelated_work", "half_skills_right_background", "title_only",
+         "most_skills_right_background"],
 )
-def test_past_work_counts_for_more_than_skills(skill, semantic, band: Band) -> None:
+def test_strong_needs_both_the_fit_and_the_skills(skill, semantic, band: Band) -> None:
     fit = LinearScorer().score(components(skill, semantic, experience=1.0))
 
-    assert assign_band(fit, True)[0] is band
+    assert assign_band(fit, skill)[0] is band
+
+
+def test_skill_coverage_is_the_required_share_else_the_overlap_score() -> None:
+    def overlap(score, coverage):
+        return SkillOverlap(
+            score=score, required_coverage=coverage, required_matched=[], required_missing=[],
+            preferred_matched=[], preferred_missing=[], required_matched_count=0,
+            required_count=0, preferred_matched_count=0, preferred_count=0, warnings=[])
+
+    assert skill_coverage(overlap(0.83, 0.5)) == 0.5
+    assert skill_coverage(overlap(0.6, None)) == 0.6  # only nice-to-have skills listed
+    assert skill_coverage(overlap(None, None)) is None
 
 
 # --- caps --------------------------------------------------------------------------
@@ -156,12 +182,12 @@ def test_past_work_counts_for_more_than_skills(skill, semantic, band: Band) -> N
      (B.UNSCORED, B.UNSCORED), (None, B.STRONG)],
 )
 def test_cap_lowers_a_strong_band(cap, expected: Band) -> None:
-    assert assign_band(0.9, True, cap) == (expected, B.STRONG)
+    assert assign_band(0.9, 1.0, cap) == (expected, B.STRONG)
 
 
 def test_cap_never_raises_a_band() -> None:
-    assert assign_band(0.1, True, B.STRONG) == (B.WEAK, B.WEAK)
-    assert assign_band(None, True, B.PARTIAL) == (B.UNSCORED, B.UNSCORED)
+    assert assign_band(0.1, 1.0, B.STRONG) == (B.WEAK, B.WEAK)
+    assert assign_band(None, 1.0, B.PARTIAL) == (B.UNSCORED, B.UNSCORED)
 
 
 def test_adjustment_defaults() -> None:
@@ -211,7 +237,7 @@ def test_bands_fits_and_order() -> None:
     result = rank([
         vac("weak", required=[A, D, E], sem=0.2),  # fit 0.26
         vac("strong", required=[A, C], sem=0.5),  # fit 0.74
-        vac("partial", required=[A, D], sem=0.6),  # fit 0.55
+        vac("partial", required=[A, D], sem=0.9),  # fit 0.71, half the skills
         vac("unscored"),  # no skills, no embedding
     ])
 
@@ -228,7 +254,8 @@ def test_bands_fits_and_order() -> None:
     assert result.semantic_calibrated is True
     assert result.scorer_name == "linear"
     assert result.weights == {"skill": 0.40, "semantic": 0.45, "experience": 0.15}
-    assert result.thresholds == {"strong_fit": 0.70, "partial_fit": 0.50}
+    assert result.thresholds == {"strong_fit": 0.70, "strong_coverage": 0.8,
+                                 "partial_fit": 0.65, "partial_coverage": 0.5}
     assert result.ranking_version == RANKING_VERSION == strong.ranking_version
     assert result.warnings == [] and result.hidden == [] and result.hidden_count == 0
 
@@ -287,7 +314,7 @@ def test_none_fit_sorts_last_within_a_band() -> None:
         ("weak-fit", Band.WEAK), ("no-fit", Band.UNSCORED)]
 
 
-def test_a_custom_scorer_changes_the_fits_and_so_the_order_and_bands() -> None:
+def test_a_custom_scorer_changes_the_fits_and_so_the_order() -> None:
     vacancies = [
         vac("skills-heavy", required=[A, D], preferred=[C], sem=0.3),  # skill 0.6
         vac("semantic-heavy", required=[A, D], sem=0.45),  # skill 0.5
@@ -299,13 +326,12 @@ def test_a_custom_scorer_changes_the_fits_and_so_the_order_and_bands() -> None:
     assert ids(default.results) == ["semantic-heavy", "skills-heavy"]
     assert [r.band for r in default.results] == [Band.WEAK] * 2
     assert ids(skills_only.results) == ["skills-heavy", "semantic-heavy"]
-    assert [r.band for r in skills_only.results] == [Band.PARTIAL] * 2
     assert skills_only.weights == {"skill": 0.85, "semantic": 0.0, "experience": 0.15}
 
 
 def test_experience_counts_in_the_fit_and_so_in_the_band() -> None:
     def asks(id: str, years: int | None) -> VacancyFeatures:
-        return vac(id, required=[A, D], sem=0.45).model_copy(
+        return vac(id, required=[A, D], sem=0.9).model_copy(
             update={"min_years_experience": years})
 
     vacancies = [asks("needs-5", 5), asks("needs-2", 2), asks("states-none", None)]
@@ -316,7 +342,7 @@ def test_experience_counts_in_the_fit_and_so_in_the_band() -> None:
     assert ids(result.results) == ["needs-2", "states-none", "needs-5"]
     assert [r.components.experience for r in result.results] == [1.0, None,
                                                                   pytest.approx(0.2)]
-    assert [r.band for r in result.results] == [Band.PARTIAL, Band.WEAK, Band.WEAK]
+    assert [r.band for r in result.results] == [Band.PARTIAL, Band.PARTIAL, Band.WEAK]
     assert {r.fit for r in without.results} == {result.results[1].fit}  # unchanged when unknown
 
 
@@ -337,7 +363,7 @@ def test_assign_band_agrees_with_rank_vacancies() -> None:
                  vac("c", sem=0.9), vac("d", required=[A, C])]
 
     for result in rank(vacancies).results:
-        assert assign_band(result.fit, result.overlap.score is not None) == (
+        assert assign_band(result.fit, skill_coverage(result.overlap)) == (
             result.band, result.band_before_cap)
 
 
@@ -351,7 +377,7 @@ def test_without_candidate_vectors_ranking_uses_skills_only() -> None:
     assert a.semantic is None and a.components.semantic is None
     assert a.fit == 1.0 and a.band is Band.STRONG
     assert a.warnings == [SEMANTIC_MISSING, BAND_WITHOUT_SEMANTIC]
-    assert (b.fit, b.band, b.warnings) == (0.5, Band.PARTIAL, [SEMANTIC_MISSING])
+    assert (b.fit, b.band, b.warnings) == (0.5, Band.WEAK, [SEMANTIC_MISSING])
     assert (c.band, c.fit, c.warnings) == (Band.UNSCORED, None, [UNSCORED])
 
 

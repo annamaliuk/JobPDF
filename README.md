@@ -362,8 +362,10 @@ on the page itself (see "Your skills and updates" below). Close the page and it 
   | No past-work score | 73% | – | 27% |
   | No skills listed by the vacancy | – | 75% | 25% |
 
-  A fit of 70% or more is strong and 50% or more is partial (`STRONG_FIT`, `PARTIAL_FIT`); a
-  vacancy that lists no skills is at most partial. The list is sorted by band, then fit.
+  A job is strong with a fit of 70% or more and at least 80% of its required skills, and
+  partial with a fit of 65% or more and at least 50% of them (`STRONG_FIT`, `STRONG_COVERAGE`,
+  `PARTIAL_FIT`, `PARTIAL_COVERAGE`, tuned on the synthetic pairs with e5); a vacancy that
+  lists no skills is at most partial. The list is sorted by band, then fit.
   `scoring.weights` and `scoring.thresholds` carry these numbers, and the ranking version is 3.
   Location is not part of the fit: it is the hide rule above.
 - **One page may make requests.** `GET /` is sent with `connect-src 'self'` so its script can

@@ -14,13 +14,13 @@ Metrics, per candidate:
 - Band agreement with JM-25's expected band: accuracy and macro-F1.
 - Across all pairs: ROC AUC of the raw semantic cosine, grade 3 against grade 0.
 
-Matching modes say how skills become keys: ``perfect`` uses JM-25's ground truth,
-``raw`` uses ``normalize()`` only (no taxonomy, the baseline for the core claim), and
-``real`` runs JM-20's normalization service. Variants say how the score is combined:
-the current weights and fit bands (JM-56), the formula before JM-56 (0.63 / 0.27 / 0.10
-with coverage bands), the current weights with those old bands, skills only, semantic
-only, a weight sweep, fit order without bands, and a TF-IDF text baseline with no skills
-and no model.
+Matching modes say how skills become keys: ``perfect`` uses JM-25's ground truth, ``raw``
+uses ``normalize()`` only (no taxonomy, the baseline for the core claim), and ``real``
+runs JM-20's normalization service. Variants say how the score is combined: the current
+weights and bands from the fit plus skill coverage (JM-56), the formula before JM-56 (0.63
+/ 0.27 / 0.10 with coverage bands), the current weights with those old bands, skills only,
+semantic only, a weight sweep, fit order without bands, and a TF-IDF text baseline with no
+skills and no model.
 
 Two tuning steps pick values by grouped cross-validation (folds split candidates, never
 pairs): the skill weight (years keep their share), and the fit thresholds of the bands. A
@@ -49,7 +49,9 @@ from jobpdf.ranking.models import CandidateSkills, SkillRef, VacancyFeatures
 from jobpdf.ranking.overlap import SkillOverlap, skill_overlap
 from jobpdf.ranking.score import (
     BAND_ORDER,
+    PARTIAL_COVERAGE,
     PARTIAL_FIT,
+    STRONG_COVERAGE,
     STRONG_FIT,
     W_EXPERIENCE,
     W_SEMANTIC,
@@ -59,6 +61,7 @@ from jobpdf.ranking.score import (
     LinearScorer,
     assign_band,
     experience_fit,
+    skill_coverage,
 )
 from jobpdf.ranking.scorer_eval import spearman
 from jobpdf.ranking.semantic import (
@@ -82,7 +85,7 @@ DEFAULT_SEED = 26
 BOOTSTRAP_SAMPLES = 2000
 WEIGHT_GRID = (0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55)  # skill; semantic gets the rest
 STRONG_GRID = (0.6, 0.65, 0.7, 0.75, 0.8)
-PARTIAL_GRID = (0.4, 0.45, 0.5, 0.55)
+PARTIAL_GRID = (0.5, 0.55, 0.6, 0.65, 0.7)  # skill coverage stays at its constants
 CURRENT_WEIGHTS = (W_SKILL, W_SEMANTIC, W_EXPERIENCE)
 BEFORE_WEIGHTS = (0.63, 0.27, 0.10)  # before JM-56: 0.7 / 0.3, then 10% for years
 # A 95% interval on the headline Spearman wider than this means the set is too small
@@ -324,6 +327,8 @@ def build_pairs(dataset: Dataset, mode: str, *, embedder: Any = None,
 class Thresholds:
     strong: float = STRONG_FIT
     partial: float = PARTIAL_FIT
+    strong_coverage: float = STRONG_COVERAGE
+    partial_coverage: float = PARTIAL_COVERAGE
 
 
 @dataclass(frozen=True)
@@ -351,7 +356,7 @@ def standard_variants() -> list[Variant]:
 def coverage_band(overlap: SkillOverlap, semantic: float | None) -> Band:
     """The band rule before JM-56: at least 80% of the required skills and past work at least
     0.3 for strong, 50% for partial. Kept only so ``before`` reproduces the old numbers."""
-    basis = overlap.required_coverage if overlap.required_coverage is not None else overlap.score
+    basis = skill_coverage(overlap)
     semantic_ok = semantic is None or semantic >= 0.3
     if basis is None:
         return Band.UNSCORED if semantic is None else Band.PARTIAL if semantic_ok else Band.WEAK
@@ -372,8 +377,9 @@ def score_pair(pair: PairData, variant: Variant) -> tuple[float | None, Band | N
     if variant.coverage_bands:
         return fit, coverage_band(pair.overlap, pair.semantic)
     t = variant.thresholds
-    band, _ = assign_band(fit, pair.overlap.score is not None, strong_fit=t.strong,
-                          partial_fit=t.partial)
+    band, _ = assign_band(fit, skill_coverage(pair.overlap), strong_fit=t.strong,
+                          strong_coverage=t.strong_coverage, partial_fit=t.partial,
+                          partial_coverage=t.partial_coverage)
     return fit, band
 
 
