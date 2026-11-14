@@ -25,13 +25,15 @@ response, which never contain CV text.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 from jobpdf.api.response import AnalysisResponse, MatchOut, SkillOut
+from jobpdf.niches import known as known_niches
+from jobpdf.niches import short_name
 from jobpdf.places import country_name
-from jobpdf.ranking.eligibility import ON_SITE_ABROAD
+from jobpdf.ranking.eligibility import ON_SITE_ABROAD, RISKY_NICHE
 from jobpdf.ranking.score import Band
 
 BEST_COUNT = 5  # matches shown as full rows; the rest are in the table
@@ -49,6 +51,11 @@ BAND_LABELS = {
 NO_JOBS = "There are no jobs to compare with your CV yet. Try again later."
 EVERYTHING_HIDDEN = ("Every job we know of is on site in another country, so none is shown. "
                      "To see them, choose \"Don't hide\" on the upload page.")
+EVERYTHING_IN_NICHES = ("Every job we know of is in an industry you chose to avoid, so none is "
+                        "shown. To see them, untick it on the upload page.")
+EVERYTHING_HIDDEN_BOTH = ("Every job we know of is on site in another country or in an industry "
+                          "you chose to avoid, so none is shown. To see them, change these "
+                          "choices on the upload page.")
 NO_REQUIRED = "This job lists no required skills, so your skills could not be compared."
 
 
@@ -137,7 +144,8 @@ class Report:
 
 
 def build_report(response: AnalysisResponse, names: Mapping[str, str] | None = None,
-                 home_country: str | None = None) -> Report:
+                 home_country: str | None = None,
+                 avoid_niches: Sequence[str] = ()) -> Report:
     labels = _Labels(names)
     jobs = [_job(m, labels) for m in response.matches]
     by_id = {m.vacancy.id: m for m in response.matches}
@@ -153,7 +161,7 @@ def build_report(response: AnalysisResponse, names: Mapping[str, str] | None = N
                 for s in skills if s.recognised],
         readings=_readings(skills, labels),
         unrecognised=[s.name for s in skills if not s.recognised],
-        notes=_notes(response, home_country),
+        notes=_notes(response, home_country, avoid_niches),
         scoring=_scoring(response),
         empty=None if jobs else _empty(response),
     )
@@ -308,22 +316,30 @@ def _learn(response: AnalysisResponse, labels: _Labels) -> list[str]:
 
 def _empty(response: AnalysisResponse) -> str:
     """Why there is nothing to show: no jobs at all, or every job was left out on request."""
-    if response.hidden_count and \
-            response.hidden_reasons.get(ON_SITE_ABROAD, 0) == response.hidden_count:
-        return EVERYTHING_HIDDEN
+    abroad = response.hidden_reasons.get(ON_SITE_ABROAD, 0)
+    niche = response.hidden_reasons.get(RISKY_NICHE, 0)
+    if response.hidden_count and not response.hidden_unexplained:
+        if abroad and niche:
+            return EVERYTHING_HIDDEN_BOTH
+        if abroad:
+            return EVERYTHING_HIDDEN
+        if niche:
+            return EVERYTHING_IN_NICHES
     return NO_JOBS
 
 
-def _notes(response: AnalysisResponse, home_country: str | None = None) -> list[str]:
+def _notes(response: AnalysisResponse, home_country: str | None = None,
+           avoid_niches: Sequence[str] = ()) -> list[str]:
     notes = []
     for warning in response.warnings:
         suffix = f" (affects {warning.count} items)" if warning.count > 1 else ""
         notes.append(warning.detail + suffix)
-    notes.extend(_hidden_notes(response, home_country))
+    notes.extend(_hidden_notes(response, home_country, avoid_niches))
     return notes
 
 
-def _hidden_notes(response: AnalysisResponse, home_country: str | None) -> list[str]:
+def _hidden_notes(response: AnalysisResponse, home_country: str | None,
+                  avoid_niches: Sequence[str] = ()) -> list[str]:
     """What was left out, and for which reason; reasons the page does not know are worded
     as before."""
     notes = []
@@ -333,12 +349,26 @@ def _hidden_notes(response: AnalysisResponse, home_country: str | None) -> list[
             else "in another country"
         notes.append(f"{plural(abroad, 'on-site or hybrid posting')} {where} left out, "
                      "as you asked.")
-    other = max(response.hidden_count - abroad, 0)
-    if other:
+    niche = response.hidden_reasons.get(RISKY_NICHE, 0)
+    if niche:
+        notes.append(f"{plural(niche, 'posting')} in {_niche_names(avoid_niches)} left out, "
+                     "as you asked.")
+    if response.hidden_unexplained:
         notes.append(
-            f"{plural(other, 'posting')} left out because your CV suggests "
-            "you could not apply for them.")
+            f"{plural(response.hidden_unexplained, 'posting')} left out because your CV "
+            "suggests you could not apply for them.")
     return notes
+
+
+def _niche_names(codes: Sequence[str]) -> str:
+    """"gambling", "gambling or crypto", "gambling, crypto or forex"; a sentence part that does
+    not name them when the page was not told which were chosen."""
+    names = [name for code in known_niches(codes) if (name := short_name(code))]
+    if not names:
+        return "an industry you chose to avoid"
+    if len(names) == 1:
+        return names[0]
+    return ", ".join(names[:-1]) + " or " + names[-1]
 
 
 def _scoring(response: AnalysisResponse) -> list[str]:

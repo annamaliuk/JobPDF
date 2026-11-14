@@ -297,8 +297,10 @@ def test_notes_use_the_fixed_sentences_and_count_what_was_left_out(response) -> 
     notes = build_report(response.model_copy(update={"warnings": warnings})).notes
     assert notes == ["One thing happened.", "Another thing happened. (affects 3 items)"]
 
-    one = build_report(response.model_copy(update={"warnings": [], "hidden_count": 1})).notes
-    many = build_report(response.model_copy(update={"warnings": [], "hidden_count": 4})).notes
+    one = build_report(response.model_copy(update={"warnings": [], "hidden_count": 1,
+                                                   "hidden_unexplained": 1})).notes
+    many = build_report(response.model_copy(update={"warnings": [], "hidden_count": 4,
+                                                   "hidden_unexplained": 4})).notes
     assert one == ["1 posting left out because your CV suggests you could not apply for them."]
     assert many == ["4 postings left out because your CV suggests you could not apply for them."]
     assert build_report(response.model_copy(update={"warnings": [], "hidden_count": 0})).notes == []

@@ -1,4 +1,5 @@
-"""JM-49: hiding on-site vacancies abroad. A vacancy is hidden only on clear evidence."""
+"""JM-49 and JM-51: hiding on-site vacancies abroad and vacancies in industries the person
+chose to avoid. A vacancy is hidden only on clear evidence."""
 
 import pytest
 from pydantic import ValidationError
@@ -7,8 +8,13 @@ from jobpdf.api.response import build_response
 from jobpdf.ranking.eligibility import (
     NOT_REMOTE_MODES,
     ON_SITE_ABROAD,
+    REASONS,
+    RISKY_NICHE,
     abroad_adjustments,
+    choice_adjustments,
+    is_in_avoided_niche,
     is_on_site_abroad,
+    niche_adjustments,
     normalize_country,
 )
 from jobpdf.ranking.models import VacancyFeatures
@@ -138,3 +144,162 @@ def test_a_vacancy_with_the_same_reason_twice_counts_once() -> None:
     doubled = [hidden[0].model_copy(update={"adjustment_reasons": ["a", "a", "b"]})]
 
     assert _hidden_reasons(doubled) == {"a": 1, "b": 1}
+
+
+# --- JM-51: industries the person chose to avoid ----------------------------------------------
+
+
+def tagged(vid="v", niches=(), mode=None, country=None, source="s") -> VacancyFeatures:
+    return VacancyFeatures(id=vid, source=source, title="T", niches=list(niches),
+                           work_mode=mode, country=country)
+
+
+def test_the_known_reasons_are_the_two_the_pages_can_word() -> None:
+    assert REASONS == {ON_SITE_ABROAD, RISKY_NICHE} and RISKY_NICHE == "risky_niche"
+
+
+@pytest.mark.parametrize("niches, avoid, hidden", [
+    (["gambling"], ["gambling"], True),
+    (["gambling", "crypto"], ["crypto"], True),
+    (["gambling"], ["crypto"], False),
+    (["gambling"], ["crypto", "gambling"], True),
+    ([], ["gambling"], False),  # nothing known about it: never hidden
+    (["gambling"], [], False),
+    (["gambling"], ["nope"], False),
+])
+def test_a_vacancy_is_hidden_when_it_is_in_an_industry_that_was_chosen(
+        niches, avoid, hidden) -> None:
+    assert is_in_avoided_niche(tagged(niches=niches), avoid) is hidden
+    assert bool(niche_adjustments([tagged("a", niches)], avoid)) is hidden
+
+
+def test_niche_adjustments_hide_with_the_niche_reason_only() -> None:
+    adjustments = niche_adjustments([tagged("a", ["crypto"]), tagged("b"),
+                                     tagged("c", ["gambling"])], ["crypto"])
+
+    assert set(adjustments) == {"a"}
+    assert adjustments["a"].hidden is True and adjustments["a"].reasons == [RISKY_NICHE]
+    assert adjustments["a"].band_cap is None
+
+
+@pytest.mark.parametrize("avoid", [None, [], (), set(), ["nope"], [""]])
+def test_without_a_known_choice_nothing_is_hidden(avoid) -> None:
+    assert niche_adjustments([tagged("a", ["crypto"])], avoid) == {}
+
+
+def test_a_stored_code_that_is_not_in_the_table_never_hides_anything() -> None:
+    # e.g. an industry removed from niches.py while stored vacancies still carry its code
+    assert niche_adjustments([tagged("a", ["retired"])], ["retired"]) == {}
+    assert niche_adjustments([tagged("a", ["retired", "crypto"])], ["retired"]) == {}
+    assert set(niche_adjustments([tagged("a", ["retired", "crypto"])],
+                                 ["retired", "crypto"])) == {"a"}
+
+
+def test_an_id_two_vacancies_disagree_on_is_not_hidden_for_either_niche() -> None:
+    vacancies = [tagged("1", ["crypto"], source="x"), tagged("1", [], source="y"),
+                 tagged("2", ["crypto"], source="x"), tagged("2", ["gambling"], source="y")]
+
+    assert set(niche_adjustments(vacancies, ["crypto", "gambling"])) == {"2"}
+
+
+def test_no_vacancies_gives_no_niche_adjustments() -> None:
+    assert niche_adjustments([], ["gambling"]) == {}
+
+
+def test_choices_join_both_reasons_on_one_adjustment_in_a_fixed_order() -> None:
+    vacancies = [tagged("both", ["crypto"], "on_site", "DE"),
+                 tagged("abroad", [], "on_site", "DE"),
+                 tagged("niche", ["crypto"], "remote", "DE"),
+                 tagged("neither", [], "remote", "DE")]
+
+    adjustments = choice_adjustments(vacancies, "UA", ["crypto"])
+
+    assert set(adjustments) == {"both", "abroad", "niche"}
+    assert adjustments["both"].reasons == [ON_SITE_ABROAD, RISKY_NICHE]
+    assert adjustments["abroad"].reasons == [ON_SITE_ABROAD]
+    assert adjustments["niche"].reasons == [RISKY_NICHE]
+    assert all(a.hidden for a in adjustments.values())
+
+
+def test_each_choice_works_alone_and_none_hides_nothing() -> None:
+    vacancies = [tagged("a", ["crypto"], "on_site", "DE")]
+
+    assert set(choice_adjustments(vacancies, "UA")) == {"a"}
+    assert set(choice_adjustments(vacancies, None, ["crypto"])) == {"a"}
+    assert choice_adjustments(vacancies) == {}
+    assert choice_adjustments(vacancies, None, None) == {}
+    assert choice_adjustments(vacancies, "ZZ", ["nope"]) == {}
+
+
+def test_joining_does_not_change_what_each_rule_says_alone() -> None:
+    vacancies = [tagged("a", ["crypto"], "on_site", "DE"), tagged("b", [], "on_site", "FR"),
+                 tagged("c", ["gambling"], "remote", None)]
+
+    joined = choice_adjustments(vacancies, "UA", ["gambling", "crypto"])
+
+    assert set(joined) == set(abroad_adjustments(vacancies, "UA")) | set(
+        niche_adjustments(vacancies, ["gambling", "crypto"]))
+
+
+# --- through the ranking and the response ------------------------------------------------------
+
+
+def tag(*ids: str, niches=("crypto",), mode=None, country=None):
+    return [v.model_copy(update={"niches": list(niches), "work_mode": mode, "country": country})
+            if v.id in ids else v for v in VACANCIES]
+
+
+def test_a_vacancy_in_an_avoided_industry_is_scored_and_listed_but_not_ranked() -> None:
+    vacancies = tag("both")
+
+    result = run(vacancies=vacancies, adjustments=choice_adjustments(vacancies, None, ["crypto"]))
+
+    assert [r.vacancy.id for r in result.ranking.results] == ["one", "none"]
+    assert [r.vacancy.id for r in result.ranking.hidden] == ["both"]
+    assert result.ranking.hidden[0].adjustment_reasons == [RISKY_NICHE]
+    assert result.ranking.hidden[0].fit is not None
+
+
+def test_the_response_counts_each_reason_and_each_vacancy_once() -> None:
+    vacancies = tag("both", mode="on_site", country="DE")
+    vacancies = [v.model_copy(update={"work_mode": "on_site", "country": "DE"})
+                 if v.id == "none" else v for v in vacancies]  # abroad only
+    adjustments = choice_adjustments(vacancies, "UA", ["crypto"])
+
+    response = build_response(run(vacancies=vacancies, adjustments=adjustments))
+
+    assert response.hidden_count == 2
+    assert response.hidden_reasons == {ON_SITE_ABROAD: 2, RISKY_NICHE: 1}
+    assert response.hidden_unexplained == 0
+    assert [m.vacancy.id for m in response.matches] == ["one"]
+
+
+def test_hidden_vacancies_with_an_unknown_reason_are_counted_as_unexplained() -> None:
+    from jobpdf.api.response import _hidden_unexplained
+    from jobpdf.ranking.score import VacancyAdjustment
+
+    vacancies = tag("both", mode="on_site", country="DE")
+    known = choice_adjustments(vacancies, "UA", ["crypto"])
+    adjustments = {**known, "one": VacancyAdjustment(hidden=True, reasons=["future_rule"]),
+                   "none": VacancyAdjustment(hidden=True)}
+    hidden = run(vacancies=vacancies, adjustments=adjustments).ranking.hidden
+
+    assert len(hidden) == 3
+    assert _hidden_unexplained(hidden) == 2
+    assert build_response(run(vacancies=vacancies, adjustments=adjustments)
+                          ).hidden_unexplained == 2
+
+
+def test_a_hidden_vacancy_with_one_known_and_one_unknown_reason_is_explained() -> None:
+    from jobpdf.api.response import _hidden_unexplained
+
+    vacancies = tag("both")
+    hidden = run(vacancies=vacancies,
+                 adjustments=choice_adjustments(vacancies, None, ["crypto"])).ranking.hidden
+    mixed = [hidden[0].model_copy(update={"adjustment_reasons": ["future_rule", RISKY_NICHE]})]
+
+    assert _hidden_unexplained(mixed) == 0
+
+
+def test_a_response_without_hidden_vacancies_has_nothing_unexplained() -> None:
+    assert build_response(run()).hidden_unexplained == 0
