@@ -213,9 +213,10 @@ def _rescore(
     scorer: Scorer,
     adjustment: VacancyAdjustment,
 ) -> FitResult:
-    """The vacancy scored again with skills added; its semantic score stays the same."""
+    """The vacancy scored again with skills added; its semantic and experience parts stay the
+    same."""
     return score_vacancy(candidate.with_added(added), fit.vacancy, fit.semantic, adjustment,
-                         scorer)
+                         scorer, experience=fit.components.experience)
 
 
 def _adjustment(

@@ -17,7 +17,7 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
-RANKING_VERSION = "1"
+RANKING_VERSION = "2"
 RAW_KEY_PREFIX = "raw:"
 ADDED_SOURCE = "added"
 

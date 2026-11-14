@@ -40,7 +40,7 @@ def test_fit_weights_writes_a_loadable_file_and_prints_numbers_only(
     assert "rows: 1200 used" in printed and "learned : skill=" in printed
     assert "s0" not in printed and "v0" not in printed  # no session or vacancy IDs echoed
     assert stored["n_rows"] == 1200
-    assert load_learned_scorer(out).weights == stored["weights"]
+    assert load_learned_scorer(out).weights == {**stored["weights"], "experience": 0.1}
 
 
 def test_fit_weights_refuses_too_little_feedback(tmp_path: Path, capsys) -> None:

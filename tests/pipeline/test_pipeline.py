@@ -522,6 +522,12 @@ def test_a_job_asking_for_clearly_more_years_than_the_cv_shows_is_capped() -> No
     assert reasons_of(run(vacancies=asking(6)), "both") == []  # 2 years short
 
 
+def test_the_cv_months_reach_the_fit_score() -> None:
+    fit = next(r for r in run(vacancies=asking(5)).ranking.results if r.vacancy.id == "both")
+
+    assert fit.components.experience == pytest.approx(0.6)  # 48 months against 60, 1 - 12/30
+
+
 def test_a_job_without_dates_switches_the_experience_check_off() -> None:
     undated = extracted(experience=[{**extracted()["experience"][0], "end": None}])
 

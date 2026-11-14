@@ -172,7 +172,7 @@ def test_learned_scorer_is_a_linear_scorer_with_its_own_name_and_weights() -> No
 
     assert isinstance(scorer, LinearScorer)
     assert scorer.name == "learned_linear"
-    assert scorer.weights == {"skill": 0.2, "semantic": 0.8}
+    assert scorer.weights == {"skill": 0.2, "semantic": 0.8, "experience": 0.1}
     assert scorer.score(components(skill=0.5, semantic=1.0)) == pytest.approx(0.9)
 
 
@@ -202,7 +202,7 @@ def test_ranking_result_says_which_scorer_ran() -> None:
                             scorer=LearnedLinearScorer(0.2, 0.8))
 
     assert result.scorer_name == "learned_linear"
-    assert result.weights == {"skill": 0.2, "semantic": 0.8}
+    assert result.weights == {"skill": 0.2, "semantic": 0.8, "experience": 0.1}
 
 
 # --- the weights file --------------------------------------------------------------
@@ -212,7 +212,7 @@ def test_weights_file_round_trip_and_provenance(weights_file: Path, rows) -> Non
     stored = json.loads(weights_file.read_text(encoding="utf-8"))
     scorer = load_learned_scorer(weights_file, calibration=CAL)
 
-    assert scorer.weights == stored["weights"]
+    assert scorer.weights == {**stored["weights"], "experience": 0.1}
     assert stored["n_rows"] == len(rows) and stored["dataset_sha256"] == "abc"
     assert stored["calibration_fingerprint"] == calibration_fingerprint(CAL)
     assert stored["log_loss"] < stored["log_loss_prior"]
@@ -288,7 +288,7 @@ def test_flag_is_off_by_default_even_when_valid_weights_exist(
     scorer = select_scorer(calibration=CAL)
 
     assert type(scorer) is LinearScorer
-    assert scorer.weights == {"skill": 0.7, "semantic": 0.3}
+    assert scorer.weights == {"skill": 0.7, "semantic": 0.3, "experience": 0.1}
 
 
 def test_the_default_weights_path_is_used_when_the_flag_is_on(

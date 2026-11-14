@@ -52,14 +52,15 @@ def semantic(score: float | None) -> SemanticScore | None:
                          calibrated=True, warnings=[])
 
 
-def ranked(cand: CandidateSkills, *specs, adjustments=None, scorer=None) -> RankingResult:
+def ranked(cand: CandidateSkills, *specs, adjustments=None, scorer=None,
+           experience=None) -> RankingResult:
     """Rank (vacancy, semantic) pairs with the real scoring code, semantics given."""
     scorer = scorer or LinearScorer()
     adjustments = adjustments or {}
     visible, hidden = [], []
     for vac, sem in specs:
         adjustment = adjustments.get(vac.id, VacancyAdjustment())
-        fit = score_vacancy(cand, vac, semantic(sem), adjustment, scorer)
+        fit = score_vacancy(cand, vac, semantic(sem), adjustment, scorer, experience=experience)
         (hidden if adjustment.hidden else visible).append(fit)
     visible.sort(key=_sort_key)
     band_counts = dict.fromkeys(Band, 0)
@@ -228,6 +229,16 @@ def test_the_semantic_score_stays_as_it_was() -> None:
     assert [i.vacancy_id for i in result.within_reach] == ["ok"]  # full coverage is not enough
     assert [i.skill.raw for i in result.skills_to_learn] == ["Y"]
     assert result.within_reach[0].fit_after == pytest.approx(0.7 * 1.0 + 0.3 * 0.5)
+
+
+def test_the_experience_part_stays_as_it_was() -> None:
+    cand = candidate("A", "B", "C")
+    ranking = ranked(cand, (vacancy("ok", "A B C Y"), 0.5), experience=0.6)
+
+    result = compute_insights(cand, ranking)
+
+    assert result.within_reach[0].fit_after == pytest.approx(
+        0.9 * (0.7 * 1.0 + 0.3 * 0.5) + 0.1 * 0.6)
 
 
 def test_a_missing_semantic_score_does_not_block_strong() -> None:

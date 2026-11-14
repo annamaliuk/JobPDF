@@ -54,6 +54,7 @@ from jobpdf.ranking.score import (
     FitComponents,
     LinearScorer,
     assign_band,
+    experience_fit,
 )
 from jobpdf.ranking.scorer_eval import spearman
 from jobpdf.ranking.semantic import (
@@ -182,6 +183,7 @@ class PairData:
     overlap: SkillOverlap
     semantic: float | None  # calibrated 0..1
     semantic_raw: float | None  # cosine before rescaling
+    experience: float | None  # experience_fit of the candidate's months and the vacancy's years
     tfidf: float
     posted: float | None
 
@@ -292,6 +294,7 @@ def build_pairs(dataset: Dataset, mode: str, *, embedder: Any = None,
                             strict=True):
                 semantic[(c.id, v.id)] = (s.score, s.raw)
     truth = dataset.truth.candidates
+    months = {c.id: c.profile.total_experience_months for c in dataset.candidates}
     out = []
     for p in dataset.pairs:
         vacancy = vacancies[p.vacancy_id]
@@ -301,6 +304,7 @@ def build_pairs(dataset: Dataset, mode: str, *, embedder: Any = None,
             expected_band=p.expected_band, trap=truth[p.candidate_id].trap,
             overlap=skill_overlap(candidates[p.candidate_id], vacancy),
             semantic=sem, semantic_raw=raw,
+            experience=experience_fit(vacancy.min_years_experience, months[p.candidate_id]),
             tfidf=float(tfidf[c_index[p.candidate_id], v_index[p.vacancy_id]]),
             posted=_timestamp(vacancy.posted_at),
         ))
@@ -322,6 +326,7 @@ class Variant:
     name: str
     w_skill: float | None  # None: the TF-IDF baseline
     use_semantic: bool = True
+    use_experience: bool = False
     use_bands: bool = True
     thresholds: Thresholds = field(default_factory=Thresholds)
 
@@ -329,6 +334,7 @@ class Variant:
 def standard_variants() -> list[Variant]:
     return [
         Variant(CURRENT, W_SKILL),
+        Variant("current+experience", W_SKILL, use_experience=True),
         Variant("skills_only", 1.0, use_semantic=False),
         Variant("semantic_only", 0.0),
         *[Variant(f"w_skill={w:.1f}", w) for w in WEIGHT_GRID if not math.isclose(w, W_SKILL)],
@@ -344,7 +350,8 @@ def score_pair(pair: PairData, variant: Variant) -> tuple[float | None, Band | N
     semantic = pair.semantic if variant.use_semantic else None
     components = FitComponents(skill=pair.overlap.score,
                                required_coverage=pair.overlap.required_coverage,
-                               semantic=semantic, semantic_raw=None)
+                               semantic=semantic, semantic_raw=None,
+                               experience=pair.experience if variant.use_experience else None)
     fit = LinearScorer(variant.w_skill, 1 - variant.w_skill).score(components)
     t = variant.thresholds
     band, _ = assign_band(pair.overlap, semantic, strong_coverage=t.strong,

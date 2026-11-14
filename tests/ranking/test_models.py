@@ -29,7 +29,7 @@ class Match:
 
 
 def test_ranking_version() -> None:
-    assert RANKING_VERSION == "1"
+    assert RANKING_VERSION == "2"
 
 
 def test_skill_ref_key_uses_the_concept_id_else_the_normalized_text() -> None:
