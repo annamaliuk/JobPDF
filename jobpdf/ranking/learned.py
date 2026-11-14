@@ -1,19 +1,19 @@
 """Learned fit weights behind a feature flag (JM-27).
 
-The hand-tuned formula (JM-24) is ``0.7 x skill + 0.3 x semantic``. This module fits
-those two weights from "useful / not useful" feedback on match cards, and lets a
-deployment switch between the two scorers without a code change:
+The hand-set formula (JM-56) is ``0.40 x skill + 0.45 x semantic + 0.15 x years``. This
+module fits the split between the first two from "useful / not useful" feedback on match
+cards, and lets a deployment switch between the two scorers without a code change:
 
-    JOBPDF_SCORER=linear    # default: the JM-24 constants
+    JOBPDF_SCORER=linear    # default: the hand-set weights
     JOBPDF_SCORER=learned   # weights from learned_weights.json, else back to linear
     JOBPDF_LEARNED_WEIGHTS=/path/to/weights.json   # optional override of the file
 
-Why this model: ``Scorer.score`` sees two informative numbers and the report explains
-the formula exactly, so the learned scorer is the same linear formula with other
-weights. They are fitted as a logistic regression on ``w x skill + (1 - w) x semantic``,
-pulled toward the 0.7 prior (few labels barely move them) and rounded to two decimals.
-The intercept is the same for every vacancy, so it cannot change an order and is not
-part of the scorer.
+Why this model: ``Scorer.score`` sees two informative numbers and the report explains the
+formula exactly, so the learned scorer is the same linear formula with other weights. They
+are fitted as a logistic regression on ``w x skill + (1 - w) x semantic``, pulled toward
+the hand-set split (``PRIOR_SKILL``; few labels barely move them) and rounded to two
+decimals. The years share stays fixed. The intercept is the same for every vacancy, so it
+cannot change an order and is not part of the scorer.
 
 Safety rules:
 
@@ -53,7 +53,15 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from jobpdf.ranking.models import RANKING_VERSION
-from jobpdf.ranking.score import W_SKILL, Band, FitComponents, LinearScorer, Scorer
+from jobpdf.ranking.score import (
+    W_EXPERIENCE,
+    W_SEMANTIC,
+    W_SKILL,
+    Band,
+    FitComponents,
+    LinearScorer,
+    Scorer,
+)
 from jobpdf.ranking.semantic import CALIBRATION, UNCALIBRATED, Calibration
 
 log = logging.getLogger(__name__)
@@ -64,6 +72,7 @@ WEIGHTS_PATH = Path(__file__).with_name("learned_weights.json")
 LINEAR = "linear"
 LEARNED = "learned"
 WEIGHTS_FORMAT_VERSION = 1
+PRIOR_SKILL = round(W_SKILL / (W_SKILL + W_SEMANTIC), 2)  # the hand-set skill:semantic split
 
 # Fitting.
 GRID = np.round(np.linspace(0.0, 1.0, 101), 2)  # candidate skill weights, two decimals
@@ -162,7 +171,7 @@ class FitSummary:
 def fit_weights(
     rows: Sequence[FeedbackRow],
     *,
-    prior_skill: float = W_SKILL,
+    prior_skill: float = PRIOR_SKILL,
     prior_strength: float = DEFAULT_PRIOR_STRENGTH,
     min_rows: int = MIN_ROWS,
 ) -> FitSummary:
@@ -238,10 +247,14 @@ def _logistic_fit(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]:
 
 
 class LearnedLinearScorer(LinearScorer):
-    """``LinearScorer`` with fitted weights; a missing part falls back exactly as there. Only the
-    skill:semantic split is learned; the experience part (JM-50) keeps its fixed share."""
+    """``LinearScorer`` with a fitted skill:semantic split (the two add up to 1); the years part
+    (JM-50) keeps its fixed share and the split shares the rest."""
 
     name = "learned_linear"
+
+    def __init__(self, w_skill: float, w_semantic: float) -> None:
+        rest = 1 - W_EXPERIENCE
+        super().__init__(round(w_skill * rest, 4), round(w_semantic * rest, 4), W_EXPERIENCE)
 
     @classmethod
     def from_summary(cls, summary: FitSummary) -> LearnedLinearScorer:

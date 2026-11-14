@@ -84,7 +84,7 @@ def encoded(state_dict: dict) -> str:
     lambda s: base64.urlsafe_b64encode(b"{not json").decode(),
     lambda s: encoded({**s, "extra": 1}),
     lambda s: encoded({**s, "version": 99}),
-    lambda s: encoded({**s, "versions": {**s["versions"], "ranking": "1"}}),
+    lambda s: encoded({**s, "versions": {**s["versions"], "ranking": "2"}}),
     lambda s: encoded({k: v for k, v in s.items() if k != "skills"}),
 ], ids=["empty", "too_big", "not_base64", "not_ascii", "not_json", "unknown_field",
         "other_version", "older_ranking", "missing_field"])

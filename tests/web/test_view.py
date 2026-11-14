@@ -352,20 +352,28 @@ def test_notes_use_the_fixed_sentences_and_count_what_was_left_out(response) -> 
 
 def test_the_scoring_text_is_built_from_the_numbers_the_response_carries(response) -> None:
     scoring = response.scoring.model_copy(update={
-        "weights": {"skill": 0.7, "semantic": 0.3, "experience": 0.1},
-        "thresholds": {"strong_coverage": 0.8, "partial_coverage": 0.5, "sem_min": 0.3},
+        "weights": {"skill": 0.40, "semantic": 0.45, "experience": 0.15},
+        "thresholds": {"strong_fit": 0.70, "strong_coverage": 0.8, "partial_fit": 0.65,
+                       "partial_coverage": 0.5},
         "semantic_calibrated": True})
 
     lines = build_report(response.model_copy(update={"scoring": scoring})).scoring
 
-    assert lines[0].startswith("Each job's fit is 70% your skills")
-    assert "30% how closely your past work resembles" in lines[0]
-    assert lines[1] == ("When a job states the years of experience it wants, 10% of its fit is "
-                        "how close your CV comes to them.")
-    assert "at least 80% of the required skills" in lines[2] and "at least 50%" in lines[2]
+    assert lines[0] == ("Each job's fit is 45% how closely your past work resembles the job's "
+                        "duties, 40% your skills against the skills it asks for, and 15% how "
+                        "close you come to the years of experience it asks for.")
+    assert lines[1] == ("When a job doesn't state the years, or your CV's dates can't be "
+                        "counted, the other two parts share that 15%.")
+    assert lines[2] == ("A strong match has a fit of 70% or more and at least 80% of the "
+                        "required skills. A partial match has a fit of 65% or more and at least "
+                        "50% of them. Anything lower is weak.")
     assert lines[3] == ("A job that asks for at least 2.5 more years of experience than your CV "
                         "shows is at most a partial match.")
     assert len(lines) == 4  # calibrated: no "approximate" note
+
+
+GENERIC_SCORING = ("Each job's fit is worked out from your past work, your skills and your years "
+                   "of experience.")
 
 
 def test_the_scoring_text_copes_with_a_scorer_it_does_not_know(response) -> None:
@@ -374,7 +382,7 @@ def test_the_scoring_text_copes_with_a_scorer_it_does_not_know(response) -> None
 
     lines = build_report(response.model_copy(update={"scoring": scoring})).scoring
 
-    assert lines == ["Each job's fit is worked out from your skills and your past work.",
+    assert lines == [GENERIC_SCORING,
                      "The comparison of past work is approximate for now."]
 
 
@@ -473,13 +481,13 @@ def test_readings_are_only_for_recognised_skills_that_have_a_standard_name(respo
 
 def test_one_weight_or_one_threshold_is_not_enough_to_quote_percentages(response) -> None:
     scoring = response.scoring.model_copy(update={
-        "weights": {"skill": 0.7}, "thresholds": {"strong_coverage": 0.8},
+        "weights": {"skill": 0.4, "semantic": 0.45}, "thresholds": {"strong_fit": 0.7},
         "semantic_calibrated": True})
 
     lines = build_report(response.model_copy(update={"scoring": scoring})).scoring
 
-    assert lines == ["Each job's fit is worked out from your skills and your past work."]
+    assert lines == [GENERIC_SCORING]
     only_partial = response.scoring.model_copy(update={
-        "weights": {"semantic": 0.3}, "thresholds": {"partial_coverage": 0.5},
+        "weights": {"semantic": 0.45}, "thresholds": {"partial_fit": 0.5},
         "semantic_calibrated": True})
     assert build_report(response.model_copy(update={"scoring": only_partial})).scoring == lines

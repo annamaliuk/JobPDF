@@ -87,7 +87,7 @@ def vacancy(vid: str, required: list[str]) -> VacancyFeatures:
     return VacancyFeatures(id=vid, source="synthetic", title=f"Role {vid}", required_skills=refs)
 
 
-VACANCIES = [vacancy("both", ["python", "sql"]), vacancy("one", ["python", "rust"]),
+VACANCIES = [vacancy("both", ["python", "sql"]), vacancy("one", ["python", "sql", "rust"]),
              vacancy("none", ["rust", "go"])]
 
 

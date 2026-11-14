@@ -130,9 +130,9 @@ def test_total_experience_and_empty_lists_come_through(full, analysed) -> None:
 def test_matched_and_missing_skills_with_counts(full) -> None:
     one = match(full, "one")
 
-    assert [s.name for s in one.required.matched] == ["python"]
+    assert [s.name for s in one.required.matched] == ["python", "sql"]
     assert [s.name for s in one.required.missing] == ["rust"]
-    assert (one.required.matched_count, one.required.count) == (1, 2)
+    assert (one.required.matched_count, one.required.count) == (2, 3)
     assert one.required.matched[0].recognised and not one.required.missing[0].recognised
     assert one.preferred.count == 0
 
@@ -298,8 +298,9 @@ def test_versions_name_everything_that_produced_the_result(full, analysed) -> No
 
 def test_scoring_explains_the_fit(full) -> None:
     assert full.scoring.scorer == "linear"
-    assert full.scoring.weights == {"skill": 0.7, "semantic": 0.3, "experience": 0.1}
-    assert {"strong_coverage", "partial_coverage", "sem_min"} <= set(full.scoring.thresholds)
+    assert full.scoring.weights == {"skill": 0.40, "semantic": 0.45, "experience": 0.15}
+    assert full.scoring.thresholds == {"strong_fit": 0.70, "strong_coverage": 0.8,
+                                       "partial_fit": 0.65, "partial_coverage": 0.5}
 
 
 def test_meta_reports_timings_and_tokens(full) -> None:
