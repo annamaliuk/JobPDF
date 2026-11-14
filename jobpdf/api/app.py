@@ -53,6 +53,7 @@ from jobpdf.api.access import (
     build_access_control,
 )
 from jobpdf.api.response import AnalysisResponse, build_response
+from jobpdf.api.sample import SampleCV, load_sample
 from jobpdf.api.vacancies import VacancyProvider, postgres_loader
 from jobpdf.extraction.llm import ToolCaller
 from jobpdf.monitoring.health import HealthReport, build_health, http_status
@@ -160,6 +161,8 @@ class Services:
     # Ukrainian skill names for the web report (JM-46): concept id -> name; empty when unknown.
     skill_names: Callable[[], Mapping[str, str]] = skill_labels.no_names
     health: Callable[..., HealthReport] = build_health
+    # The CV visitors can try instead of their own (JM-52); None: the feature is off.
+    sample: SampleCV | None = None
     max_concurrent: int = MAX_CONCURRENT_ANALYSES
     slots: threading.BoundedSemaphore = field(init=False)
 
@@ -177,7 +180,7 @@ def build_services() -> Services:
     names = (skill_labels.IndexSkillNames(skill_labels.postgres_loader(url)).get if url
              else skill_labels.no_names)
     return Services(access=access, vacancies=provider.get, normalizer=normalizer,
-                    scorer=select_scorer(), skill_names=names)
+                    scorer=select_scorer(), skill_names=names, sample=load_sample())
 
 
 def create_app(services: Services | None = None) -> FastAPI:
@@ -291,12 +294,31 @@ async def read_form(request: Request, svc: Services,
         await form.close()
 
 
+async def read_fields(request: Request, fields: tuple[str, ...]) -> dict[str, str]:
+    """The plain text fields named in ``fields`` from a form without a CV (the sample report,
+    JM-52). A missing field, or one that is a file, comes back as ``""``; an uploaded file is
+    never read."""
+    try:
+        form = await request.form()
+    except BodyTooLarge:
+        raise AccessError(TOO_LARGE) from None
+    except HTTPException:  # malformed multipart
+        raise BadRequest from None
+    try:
+        return {name: value if isinstance(value := form.get(name), str) else ""
+                for name in fields}
+    finally:
+        await form.close()
+
+
 def _run(svc: Services, content: bytes, filename: str, *,
          on_stage: Callable[[str], None] | None = None,
-         home_country: str | None = None) -> PipelineResult:
+         home_country: str | None = None,
+         caller: ToolCaller | None = None) -> PipelineResult:
     """The pipeline, observed. ``on_stage`` (the web page's progress, JM-44) and
     ``home_country`` (hide jobs that need you somewhere else, JM-49 and JM-47) are passed on
-    only when given, so an ``analyze`` that does not know them still works."""
+    only when given, so an ``analyze`` that does not know them still works. ``caller``
+    replaces ``svc.caller`` for this run (the sample CV's memo, JM-52)."""
 
     def call() -> PipelineResult:  # inside the observation: a failing vacancy list is counted
         vacancies = svc.vacancies()
@@ -306,8 +328,8 @@ def _run(svc: Services, content: bytes, filename: str, *,
         if home_country is not None:
             extra["adjustments"] = location_adjustments(vacancies, home_country)
         return svc.analyze(
-            content, filename, vacancies, caller=svc.caller, normalizer=svc.normalizer,
-            embedder=svc.embedder, scorer=svc.scorer, **extra)
+            content, filename, vacancies, caller=caller if caller is not None else svc.caller,
+            normalizer=svc.normalizer, embedder=svc.embedder, scorer=svc.scorer, **extra)
 
     return svc.recorder.observe_analysis(call)
 

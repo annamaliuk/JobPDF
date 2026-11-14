@@ -140,10 +140,11 @@ class Report:
     notes: list[str] = field(default_factory=list)
     scoring: list[str] = field(default_factory=list)
     empty: str | None = None
+    sample: bool = False  # the report is for the sample CV, not the visitor's (JM-52)
 
 
 def build_report(response: AnalysisResponse, names: Mapping[str, str] | None = None,
-                 home_country: str | None = None) -> Report:
+                 home_country: str | None = None, *, sample: bool = False) -> Report:
     labels = _Labels(names)
     jobs = [_job(m, labels) for m in response.matches]
     by_id = {m.vacancy.id: m for m in response.matches}
@@ -162,6 +163,7 @@ def build_report(response: AnalysisResponse, names: Mapping[str, str] | None = N
         notes=_notes(response, home_country),
         scoring=_scoring(response),
         empty=None if jobs else _empty(response),
+        sample=sample,
     )
 
 

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Your CV report{% endblock %}
+{% block title %}{% if report.sample %}Sample CV report{% else %}Your CV report{% endif %}{% endblock %}
 {% block head %}  <meta name="robots" content="noindex">{% endblock %}
 {% macro job_row(job) %}
 <li class="job">
@@ -26,7 +26,14 @@
 {% endmacro %}
 {% block main %}
 <section class="intro">
+{% if report.sample %}
+  <h1>Report for a sample CV</h1>
+  <p class="sample-note">This report is for a sample CV, not yours. It shows what you get for your own:
+    <a href="/sample-cv" target="_blank" rel="noopener">see the sample CV</a>, or
+    <a href="/">check your own CV</a>.</p>
+{% else %}
   <h1>Your CV report</h1>
+{% endif %}
   {% if report.summary %}<p class="lead">{{ report.summary }}</p>{% endif %}
   <dl class="figures">
     {% for figure in report.figures %}
@@ -124,5 +131,5 @@
   {% for line in report.scoring %}<p>{{ line }}</p>{% endfor %}
 </section>
 
-<p class="again"><a class="button" href="/">Check another CV</a></p>
+<p class="again"><a class="button" href="/">{% if report.sample %}Check your own CV{% else %}Check another CV{% endif %}</a></p>
 {% endblock %}

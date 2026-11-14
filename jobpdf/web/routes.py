@@ -4,6 +4,9 @@
     POST /report   multipart ``file`` -> the report as an HTML page (one request, nothing stored);
                    with ``Accept: text/event-stream`` the same request streams progress steps
                    and ends with the page (JM-44, see ``progress.py``)
+    POST /report/sample  the same report for the sample CV bundled with the app; the form's
+                   choices, no file (JM-52, see ``jobpdf/api/sample.py``)
+    GET  /sample-cv  the sample CV itself, so a visitor can see what was read
     GET  /static/  one stylesheet and one small script
 
 There is no login and no key in the browser. A key in a page's script is not a secret, so this
@@ -35,7 +38,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from markupsafe import Markup, escape
 from starlette.staticfiles import StaticFiles
@@ -43,6 +46,7 @@ from starlette.staticfiles import StaticFiles
 from jobpdf.api import app as api  # shares its form reading, limits and pipeline run
 from jobpdf.api.access import AccessError
 from jobpdf.api.response import build_response
+from jobpdf.api.sample import SampleCV
 from jobpdf.normalization import skill_names
 from jobpdf.pipeline import MAX_UPLOAD_BYTES, PipelineError, PipelineResult
 from jobpdf.places import COUNTRY_NAMES
@@ -56,7 +60,11 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 TEMPLATE_DIR = PACKAGE_DIR / "templates"
 STATIC_DIR = PACKAGE_DIR / "static"
 REPORT_PATH = "/report"
+SAMPLE_REPORT_PATH = "/report/sample"  # JM-52
+SAMPLE_CV_PATH = "/sample-cv"
+SAMPLE_UNAVAILABLE = "sample_unavailable"
 HOME_COUNTRY_FIELD = "home_country"  # the form's "hide on-site jobs outside" choice; "" = none
+FORM_FIELDS = (skill_names.LANGUAGE_FIELD, HOME_COUNTRY_FIELD)
 UNKNOWN_CLIENT = "0.0.0.0"  # one shared bucket for a request with no usable address
 
 CONTENT_SECURITY_POLICY = (
@@ -80,6 +88,14 @@ PAGE_HEADERS = {
 WEB_DETAILS: dict[str, str] = {
     api.INVALID_REQUEST: "Choose a PDF or Word file and try again.",
     "rate_limited": "You have uploaded a lot of CVs for now. Try again in {wait}.",
+    SAMPLE_UNAVAILABLE: "There is no sample CV on this server. Upload your own CV instead.",
+}
+# The sample CV as a file: the visitor's browser shows it; it is the same for everyone.
+SAMPLE_FILE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
 }
 
 _templates = Environment(
@@ -118,7 +134,10 @@ def register_web(app: FastAPI) -> None:
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def index(request: Request) -> HTMLResponse:
+        svc: api.Services = request.app.state.services
         return _page("index.html",
+                     sample_path=SAMPLE_REPORT_PATH if svc.sample is not None else None,
+                     sample_cv=SAMPLE_CV_PATH,
                      headers={"Content-Security-Policy": INDEX_CONTENT_SECURITY_POLICY},
                      max_bytes=MAX_UPLOAD_BYTES, field=api.FILE_FIELD, path=REPORT_PATH,
                      steps=progress.STEPS, language_field=skill_names.LANGUAGE_FIELD,
@@ -130,42 +149,79 @@ def register_web(app: FastAPI) -> None:
         svc: api.Services = request.app.state.services
         try:
             svc.access.authorize_web(_client_ip(request), api._declared_length(request))
-            content, filename, fields = await api.read_form(
-                request, svc, (skill_names.LANGUAGE_FIELD, HOME_COUNTRY_FIELD))
+            content, filename, fields = await api.read_form(request, svc, FORM_FIELDS)
         except AccessError as exc:
             svc.recorder.record_access_denied(exc.code)
             return _error_page(exc.code, exc.status, retry_after=exc.retry_after)
         except api.BadRequest:
             return _error_page(api.INVALID_REQUEST, 400)
+        return await _analysis_page(request, svc, content, filename, fields)
 
-        language = skill_names.choose_language(fields[skill_names.LANGUAGE_FIELD])
-        home = normalize_country(fields[HOME_COUNTRY_FIELD])  # None: hide nothing
-        if not svc.slots.acquire(blocking=False):
-            svc.recorder.record_access_denied(api.BUSY)
-            return _error_page(api.BUSY, 503, retry_after=api.BUSY_RETRY_AFTER_S)
-        if progress.wants_stream(request.headers.get("accept")):
-            return _stream_report(svc, content, filename, language, home)  # now owns the slot
-        try:
-            result = await run_in_threadpool(api._run, svc, content, filename,
-                                             home_country=home)
-        except PipelineError as exc:
-            return _error_page(exc.code, api.PIPELINE_STATUS.get(exc.code, 500))
-        except Exception as exc:  # already counted by the recorder; never echo the text
-            log.error("analysis failed unexpectedly (%s)", type(exc).__name__)
-            return _error_page(api.INTERNAL_ERROR, 500)
-        finally:
-            svc.slots.release()
-        try:
-            # In a thread: the first Ukrainian report reads the names from the database.
-            html = await run_in_threadpool(_report_html, svc, result, language, home)
-        except Exception as exc:  # a page that cannot be drawn must not echo the CV either
-            log.error("report page failed (%s)", type(exc).__name__)
-            return _error_page(api.INTERNAL_ERROR, 500)
-        return HTMLResponse(html, headers=PAGE_HEADERS)
+    @app.post(SAMPLE_REPORT_PATH, response_class=HTMLResponse, include_in_schema=False)
+    async def sample_report(request: Request) -> HTMLResponse:
+        svc: api.Services = request.app.state.services
+        sample = svc.sample
+        if sample is None:
+            return _error_page(SAMPLE_UNAVAILABLE, 404)
+        try:  # the same limits as an upload: a sample report costs the same work
+            svc.access.authorize_web(_client_ip(request), api._declared_length(request))
+            fields = await api.read_fields(request, FORM_FIELDS)
+        except AccessError as exc:
+            svc.recorder.record_access_denied(exc.code)
+            return _error_page(exc.code, exc.status, retry_after=exc.retry_after)
+        except api.BadRequest:
+            return _error_page(api.INVALID_REQUEST, 400)
+        return await _analysis_page(request, svc, sample.content, sample.filename, fields,
+                                    sample)
+
+    @app.get(SAMPLE_CV_PATH, include_in_schema=False)
+    def sample_cv(request: Request) -> Response:
+        sample: SampleCV | None = request.app.state.services.sample
+        if sample is None:
+            return _error_page(SAMPLE_UNAVAILABLE, 404)
+        name = "sample-cv" + Path(sample.filename).suffix
+        return Response(sample.content, media_type=sample.media_type, headers={
+            **SAMPLE_FILE_HEADERS, "Content-Disposition": f'inline; filename="{name}"'})
+
+
+async def _analysis_page(request: Request, svc: api.Services, content: bytes, filename: str,
+                         fields: Mapping[str, str], sample: SampleCV | None = None):
+    """Run the pipeline on a CV, an upload or the sample, and answer with the report page or,
+    when the browser asks for it, the progress stream that ends with it."""
+    language = skill_names.choose_language(fields[skill_names.LANGUAGE_FIELD])
+    home = normalize_country(fields[HOME_COUNTRY_FIELD])  # None: hide nothing
+    if not svc.slots.acquire(blocking=False):
+        svc.recorder.record_access_denied(api.BUSY)
+        return _error_page(api.BUSY, 503, retry_after=api.BUSY_RETRY_AFTER_S)
+    if progress.wants_stream(request.headers.get("accept")):
+        return _stream_report(svc, content, filename, language, home, sample)  # owns the slot
+    try:
+        result = await run_in_threadpool(api._run, svc, content, filename, home_country=home,
+                                         **_caller_for(sample))
+    except PipelineError as exc:
+        return _error_page(exc.code, api.PIPELINE_STATUS.get(exc.code, 500))
+    except Exception as exc:  # already counted by the recorder; never echo the text
+        log.error("analysis failed unexpectedly (%s)", type(exc).__name__)
+        return _error_page(api.INTERNAL_ERROR, 500)
+    finally:
+        svc.slots.release()
+    try:
+        # In a thread: the first Ukrainian report reads the names from the database.
+        html = await run_in_threadpool(_report_html, svc, result, language, home,
+                                       sample is not None)
+    except Exception as exc:  # a page that cannot be drawn must not echo the CV either
+        log.error("report page failed (%s)", type(exc).__name__)
+        return _error_page(api.INTERNAL_ERROR, 500)
+    return HTMLResponse(html, headers=PAGE_HEADERS)
+
+
+def _caller_for(sample: SampleCV | None) -> dict[str, Any]:
+    """The sample's model answers come from its memo; an upload uses the normal caller."""
+    return {} if sample is None else {"caller": sample.caller}
 
 
 def _report_html(svc: api.Services, result: PipelineResult, language: str,
-                 home: str | None = None) -> str:
+                 home: str | None = None, sample: bool = False) -> str:
     """The report page. Skill names are Ukrainian only when asked for; if the names cannot be
     loaded the page is made in English (``skill_names`` logs why)."""
     names: Mapping[str, str] | None = None
@@ -175,17 +231,18 @@ def _report_html(svc: api.Services, result: PipelineResult, language: str,
         except Exception as exc:  # never a reason to lose the report
             log.warning("ukrainian skill names unavailable (%s)", type(exc).__name__)
     return _render("report.html",
-                   report=build_report(build_response(result), names, home))
+                   report=build_report(build_response(result), names, home, sample=sample))
 
 
 def _stream_report(svc: api.Services, content: bytes, filename: str, language: str,
-                   home: str | None = None) -> StreamingResponse:
+                   home: str | None = None, sample: SampleCV | None = None) -> StreamingResponse:
     """The report as a stream of progress steps. The analysis slot taken by the caller goes to
     the worker thread, which gives it back when the analysis ends, however the client behaves."""
 
     def work(on_stage) -> progress.Outcome:
         try:
-            result = api._run(svc, content, filename, on_stage=on_stage, home_country=home)
+            result = api._run(svc, content, filename, on_stage=on_stage, home_country=home,
+                              **_caller_for(sample))
         except PipelineError as exc:
             return _failed(exc.code, api.PIPELINE_STATUS.get(exc.code, 500))
         except Exception as exc:  # already counted by the recorder; never echo the text
@@ -193,7 +250,7 @@ def _stream_report(svc: api.Services, content: bytes, filename: str, language: s
             return _failed(api.INTERNAL_ERROR, 500)
         on_stage(progress.RENDER_STAGE)
         try:
-            html = _report_html(svc, result, language, home)
+            html = _report_html(svc, result, language, home, sample is not None)
         except Exception as exc:  # a page that cannot be drawn must not echo the CV either
             log.error("report page failed (%s)", type(exc).__name__)
             return _failed(api.INTERNAL_ERROR, 500)
