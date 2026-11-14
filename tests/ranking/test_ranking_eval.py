@@ -252,3 +252,20 @@ def test_script_refuses_real_mode_without_the_index(
     assert code == 2
     assert "skill index" in capsys.readouterr().err
     assert not results.exists()
+
+
+def test_the_calibration_export_writes_grade_3_and_grade_0_pairs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "export_calibration_pairs", ROOT / "scripts" / "export_calibration_pairs.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    out = tmp_path / "pairs.json"
+
+    assert module.main(["--out", str(out)]) == 0
+
+    pairs = json.loads(out.read_text(encoding="utf-8"))["pairs"]
+    assert (len(pairs), sum(p["related"] for p in pairs)) == (693, 43)  # grades 3 and 0
+    assert all(p["cv_text"] and p["vacancy_text"] for p in pairs)
+    assert capsys.readouterr().out == "written 693 pairs: 43 related, 650 unrelated\n"
