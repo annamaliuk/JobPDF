@@ -350,13 +350,22 @@ on the page itself (see "Your skills and updates" below). Close the page and it 
   (`jobpdf/web/update.py`). An update is not counted against the upload limit; it still takes
   one of the analysis slots. "Within reach" and "Skills worth learning" (JM-42) now appear on
   every report, and the JSON API's `insights` is filled.
-- **Experience in the fit.** When a vacancy states the years it wants, 10% of its fit
-  (`W_EXPERIENCE`) is how close the CV comes: 1 when it has them, falling in a straight line to
-  0 at 2.5 years short. Skills and past work share the rest 7:3, so a vacancy that states no
-  years (or a CV whose months could not be counted) gets the same fit as before. It only
-  reorders jobs inside a band. Each match's `components` now has `experience`, `scoring.weights`
-  has `"experience"`, and the ranking version is 2. Location is not part of the fit: it is the
-  hide rule above.
+- **How the fit and bands work.** A job's fit is 45% past-work relevance (`W_SEMANTIC`), 40%
+  skills (`W_SKILL`) and 15% years of experience (`W_EXPERIENCE`: 1 when the CV has the years
+  the vacancy asks for, falling in a straight line to 0 at 2.5 years short). A part that is
+  unknown gives its weight to the others in proportion:
+
+  | Known | Skills | Past work | Years |
+  |---|---|---|---|
+  | All three | 40% | 45% | 15% |
+  | No years stated, or months unknown | 47% | 53% | – |
+  | No past-work score | 73% | – | 27% |
+  | No skills listed by the vacancy | – | 75% | 25% |
+
+  A fit of 70% or more is strong and 50% or more is partial (`STRONG_FIT`, `PARTIAL_FIT`); a
+  vacancy that lists no skills is at most partial. The list is sorted by band, then fit.
+  `scoring.weights` and `scoring.thresholds` carry these numbers, and the ranking version is 3.
+  Location is not part of the fit: it is the hide rule above.
 - **One page may make requests.** `GET /` is sent with `connect-src 'self'` so its script can
   post to `/report`; every other page keeps `connect-src 'none'`.
 - The page is in English. It is not part of the JSON API: `/docs` does not list it.
