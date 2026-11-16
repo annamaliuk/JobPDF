@@ -34,7 +34,11 @@ from tests.pipeline.fakes import run
 
 @pytest.fixture(scope="module")
 def response() -> AnalysisResponse:
-    return build_response(run())
+    """The real response with the skills only in the skills list, so a test that replaces that
+    list decides every skill on the page (the job's own skills are gathered too, JM-53)."""
+    full = build_response(run())
+    jobs = [job.model_copy(update={"skills": []}) for job in full.profile.experience]
+    return full.model_copy(update={"profile": full.profile.model_copy(update={"experience": jobs})})
 
 
 def skill(name: str, label: str | None = None, *, concept: str | None = "c", low=False):
@@ -77,7 +81,10 @@ def test_a_real_response_becomes_a_report_with_every_section(response) -> None:
     assert report.best[0].coverage == "You have 2 of 2 required skills."
     assert report.best[1].missing == "Missing: rust."
     assert [s.label for s in report.skills] == ["Python", "SQL"]
-    assert report.empty is None and report.reach == [] and report.learn == []
+    assert report.check == [] and report.added == [] and report.unrecognised == []
+    assert report.empty is None
+    assert [r.text for r in report.reach] == ["Role one: add rust to reach a strong match."]
+    assert [[t.value for t in r.skills] for r in report.reach] == [["rust"]]
 
 
 # --- figures -----------------------------------------------------------------------------------
@@ -254,9 +261,37 @@ def test_skills_are_listed_once_and_unsure_ones_flagged(response) -> None:
 
     report = build_report(response.model_copy(update={"profile": profile}))
 
-    assert [(s.label, s.unsure) for s in report.skills] == [("Python", False),
-                                                            ("JavaScript", True)]
+    assert [(s.label, s.value) for s in report.skills] == [("Python", "a")]
+    assert [(s.label, s.value, s.written) for s in report.check] == [("JavaScript", "b", "JS")]
     assert report.unrecognised == ["???", "Other"]
+
+
+def test_the_skills_each_job_used_are_listed_too_once_each(response) -> None:
+    job = response.profile.experience[0].model_copy(update={"skills": [
+        skill("Python", "Python", concept="a"), skill("Spark", "Apache Spark", concept="s")]})
+    profile = response.profile.model_copy(update={
+        "skills": [skill("Python", "Python", concept="a")], "experience": [job]})
+
+    report = build_report(response.model_copy(update={"profile": profile}))
+
+    assert [s.label for s in report.skills] == ["Python", "Apache Spark"]
+    assert [f.value for f in report.figures if f.label == "Skills recognised"] == ["2 of 2"]
+
+
+def test_skills_added_on_the_page_are_their_own_group_and_counted_apart(response) -> None:
+    profile = response.profile.model_copy(update={"skills": [
+        skill("Python", "Python", concept="a"),
+        skill("dbt", "dbt", concept="d").model_copy(update={"added": True}),
+        skill("Zeppelin", None).model_copy(update={"added": True})]})
+
+    report = build_report(response.model_copy(update={"profile": profile}))
+
+    assert [s.label for s in report.skills] == ["Python"]
+    assert [(s.label, s.value, s.recognised) for s in report.added] == [
+        ("dbt", "d", True), ("Zeppelin", "raw:zeppelin", False)]
+    assert report.unrecognised == []
+    figures = {f.label: f.value for f in report.figures}
+    assert figures["Skills recognised"] == "1 of 1" and figures["Added by you"] == "2"
 
 
 def test_abbreviations_are_explained_only_when_the_wording_differs(response) -> None:
@@ -282,7 +317,10 @@ def test_within_reach_and_skills_to_learn_appear_only_when_computed(response) ->
 
     report = report_of(response, match, insights=insights)
 
-    assert report.reach == ["Data engineer at Acme: add dbt and Airflow to reach a strong match."]
+    assert [r.text for r in report.reach] == [
+        "Data engineer at Acme: add dbt and Airflow to reach a strong match."]
+    assert [(t.label, t.value) for t in report.reach[0].skills] == [("dbt", "dbt"),
+                                                                    ("Airflow", "Airflow")]
     assert report.learn == ["dbt: would make 3 more jobs a strong match.",
                             "Go: would make 1 more job a strong match."]
     off = report_of(response, match, insights=insights.model_copy(update={"computed": False}))
@@ -294,7 +332,7 @@ def test_within_reach_without_a_company_has_no_dangling_at(response) -> None:
     insights = Insights(computed=True, within_reach=[
         WithinReach(vacancy_id="j1", missing=[skill("dbt", "dbt")])])
 
-    assert report_of(response, match, insights=insights).reach == [
+    assert [r.text for r in report_of(response, match, insights=insights).reach] == [
         "Data engineer: add dbt to reach a strong match."]
 
 
@@ -316,18 +354,28 @@ def test_notes_use_the_fixed_sentences_and_count_what_was_left_out(response) -> 
 
 def test_the_scoring_text_is_built_from_the_numbers_the_response_carries(response) -> None:
     scoring = response.scoring.model_copy(update={
-        "weights": {"skill": 0.7, "semantic": 0.3},
-        "thresholds": {"strong_coverage": 0.8, "partial_coverage": 0.5, "sem_min": 0.3},
+        "weights": {"skill": 0.40, "semantic": 0.45, "experience": 0.15},
+        "thresholds": {"strong_fit": 0.70, "strong_coverage": 0.8, "partial_fit": 0.65,
+                       "partial_coverage": 0.5},
         "semantic_calibrated": True})
 
     lines = build_report(response.model_copy(update={"scoring": scoring})).scoring
 
-    assert lines[0].startswith("Each job's fit is 70% your skills")
-    assert "30% how closely your past work resembles" in lines[0]
-    assert "at least 80% of the required skills" in lines[1] and "at least 50%" in lines[1]
-    assert lines[2] == ("A job that asks for at least 2.5 more years of experience than your CV "
+    assert lines[0] == ("Each job's fit is 45% how closely your past work resembles the job's "
+                        "duties, 40% your skills against the skills it asks for, and 15% how "
+                        "close you come to the years of experience it asks for.")
+    assert lines[1] == ("When a job doesn't state the years, or your CV's dates can't be "
+                        "counted, the other two parts share that 15%.")
+    assert lines[2] == ("A strong match has a fit of 70% or more and at least 80% of the "
+                        "required skills. A partial match has a fit of 65% or more and at least "
+                        "50% of them. Anything lower is weak.")
+    assert lines[3] == ("A job that asks for at least 2.5 more years of experience than your CV "
                         "shows is at most a partial match.")
-    assert len(lines) == 3  # calibrated: no "approximate" note
+    assert len(lines) == 4  # calibrated: no "approximate" note
+
+
+GENERIC_SCORING = ("Each job's fit is worked out from your past work, your skills and your years "
+                   "of experience.")
 
 
 def test_the_scoring_text_copes_with_a_scorer_it_does_not_know(response) -> None:
@@ -336,7 +384,7 @@ def test_the_scoring_text_copes_with_a_scorer_it_does_not_know(response) -> None
 
     lines = build_report(response.model_copy(update={"scoring": scoring})).scoring
 
-    assert lines == ["Each job's fit is worked out from your skills and your past work.",
+    assert lines == [GENERIC_SCORING,
                      "The comparison of past work is approximate for now."]
 
 
@@ -435,13 +483,13 @@ def test_readings_are_only_for_recognised_skills_that_have_a_standard_name(respo
 
 def test_one_weight_or_one_threshold_is_not_enough_to_quote_percentages(response) -> None:
     scoring = response.scoring.model_copy(update={
-        "weights": {"skill": 0.7}, "thresholds": {"strong_coverage": 0.8},
+        "weights": {"skill": 0.4, "semantic": 0.45}, "thresholds": {"strong_fit": 0.7},
         "semantic_calibrated": True})
 
     lines = build_report(response.model_copy(update={"scoring": scoring})).scoring
 
-    assert lines == ["Each job's fit is worked out from your skills and your past work."]
+    assert lines == [GENERIC_SCORING]
     only_partial = response.scoring.model_copy(update={
-        "weights": {"semantic": 0.3}, "thresholds": {"partial_coverage": 0.5},
+        "weights": {"semantic": 0.45}, "thresholds": {"partial_fit": 0.5},
         "semantic_calibrated": True})
     assert build_report(response.model_copy(update={"scoring": only_partial})).scoring == lines

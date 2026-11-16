@@ -269,7 +269,8 @@ five steps (reading the file, finding skills, matching them to the standard list
 current jobs, building the report) and marks each as waiting, in progress or done. Then the report
 appears: the figures from the CV, the best matches with "You have 7 of 9 required skills" and
 what is missing, the skills that were found and how abbreviations were read, every match in a
-table, notes on data quality and how the fit is scored. Close the page and it is gone.
+table, notes on data quality and how the fit is scored. Skills the analysis missed can be added
+on the page itself (see "Your skills and updates" below). Close the page and it is gone.
 
 - **One request, nothing stored.** The page is made by the server (`jobpdf/web/`, Jinja2
   templates, one stylesheet and one small script, no build step). It runs the same analysis as
@@ -331,7 +332,7 @@ table, notes on data quality and how the fit is scored. Close the page and it is
   re-processed it has no work mode and is never hidden. The JSON API is unchanged except that its response now has
   `hidden_reasons` (`{}` unless something was hidden); it has no country parameter.
 - **Experience check.** A vacancy that asks for at least 2.5 years more experience than the CV
-  shows (`EXPERIENCE_MARGIN_MONTHS` in `jobpdf/ranking/eligibility.py`) is at most a partial
+  shows (`EXPERIENCE_MARGIN_MONTHS` in `jobpdf/ranking/score.py`) is at most a partial
   match; it is never hidden for this, and its card says why. A CV with no jobs counts as 0
   months. When a job in the CV has a date that could not be counted, the total would be too
   low, so no vacancy is capped. This applies to the web page and the JSON API alike.
@@ -378,6 +379,38 @@ table, notes on data quality and how the fit is scored. Close the page and it is
   every visitor sees the same profile. The ranking is still computed each time, against the
   vacancies of the moment. Uploaded CVs never go through this memory, and nothing is written to
   disk.
+- **Your skills and updates.** The report starts with the skills found in the CV (the skills
+  list and each job's skills), in groups: used for matching, "please check" (matched with low
+  confidence, each with a remove tick and how it was read), and not recognised (these count
+  only when a vacancy writes them the same way). Under them, "Add skills we missed" takes up to
+  20 names separated by commas or semicolons (more, or names over 60 characters, are left out
+  and the updated report says so), and each "Within reach" line has an "I have this" tick. "Update matches" posts a
+  plain form to `POST /report/update`: the page carries what ranking needs in a hidden field
+  (the matched skills, the past-work vectors, the counted months, the country, the industries to hide and the language;
+  base64 JSON, at most 256 KB, refused after a ranking version change), and the server
+  re-ranks the vacancies it has now with the same code as the first run. No CV, nothing stored
+  and no model call: typed skills are matched by exact name and vector search only
+  (`jobpdf/web/update.py`). An update is not counted against the upload limit; it still takes
+  one of the analysis slots. "Within reach" and "Skills worth learning" (JM-42) now appear on
+  every report, and the JSON API's `insights` is filled.
+- **How the fit and bands work.** A job's fit is 45% past-work relevance (`W_SEMANTIC`), 40%
+  skills (`W_SKILL`) and 15% years of experience (`W_EXPERIENCE`: 1 when the CV has the years
+  the vacancy asks for, falling in a straight line to 0 at 2.5 years short). A part that is
+  unknown gives its weight to the others in proportion:
+
+  | Known | Skills | Past work | Years |
+  |---|---|---|---|
+  | All three | 40% | 45% | 15% |
+  | No years stated, or months unknown | 47% | 53% | – |
+  | No past-work score | 73% | – | 27% |
+  | No skills listed by the vacancy | – | 75% | 25% |
+
+  A job is strong with a fit of 70% or more and at least 80% of its required skills, and
+  partial with a fit of 65% or more and at least 50% of them (`STRONG_FIT`, `STRONG_COVERAGE`,
+  `PARTIAL_FIT`, `PARTIAL_COVERAGE`, tuned on the synthetic pairs with e5); a vacancy that
+  lists no skills is at most partial. The list is sorted by band, then fit.
+  `scoring.weights` and `scoring.thresholds` carry these numbers, and the ranking version is 3.
+  Location is not part of the fit: it is the hide rule above.
 - **One page may make requests.** `GET /` is sent with `connect-src 'self'` so its script can
   post to `/report` and `/report/sample`; every other page keeps `connect-src 'none'`.
 - The page is in English. It is not part of the JSON API: `/docs` does not list it.

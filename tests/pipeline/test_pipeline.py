@@ -522,6 +522,12 @@ def test_a_job_asking_for_clearly_more_years_than_the_cv_shows_is_capped() -> No
     assert reasons_of(run(vacancies=asking(6)), "both") == []  # 2 years short
 
 
+def test_the_cv_months_reach_the_fit_score() -> None:
+    fit = next(r for r in run(vacancies=asking(5)).ranking.results if r.vacancy.id == "both")
+
+    assert fit.components.experience == pytest.approx(0.6)  # 48 months against 60, 1 - 12/30
+
+
 def test_a_job_without_dates_switches_the_experience_check_off() -> None:
     undated = extracted(experience=[{**extracted()["experience"][0], "end": None}])
 
@@ -533,3 +539,21 @@ def test_a_cv_without_jobs_counts_as_no_experience() -> None:
 
     assert reasons_of(run(vacancies=asking(3), caller=caller(reply(no_jobs))), "both") == [
         EXPERIENCE_SHORT]
+
+
+def test_the_result_carries_the_insights_and_what_an_update_needs() -> None:
+    result = run()
+
+    assert result.insights is not None and result.insights.working_set_size == 3
+    assert result.vectors is not None and result.vectors.paths
+    assert result.experience_months == result.profile.total_experience_months
+
+
+def test_rank_profile_is_the_ranking_stage_of_analyze_cv() -> None:
+    result = run()
+
+    ranking, insights = pipeline.rank_profile(result.candidate_skills, result.vectors, VACANCIES,
+                                              result.experience_months)
+
+    assert ranking.model_dump() == result.ranking.model_dump()
+    assert insights == result.insights

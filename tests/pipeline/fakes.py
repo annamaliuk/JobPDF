@@ -59,20 +59,26 @@ class FakeNormalizer:
 
     def __init__(self, warnings: list[str] | None = None) -> None:
         self.profiles: list = []
+        self.typed: list[tuple[list[str], bool]] = []  # normalize_skills calls: names, use_llm
         self.warnings = warnings or []
 
     def normalize_profile(self, profile) -> ProfileSkills:
         self.profiles.append(profile)
-        matches = {}
-        for path, raw in profile_skill_paths(profile):
-            concept = self.known.get(raw.lower())
-            matches[path] = SkillMatch(
-                raw=raw, normalized=raw.lower(), concept_id=concept,
-                preferred_label=raw if concept else None,
-                tier=MatchTier.EXACT if concept else MatchTier.UNMATCHED,
-                warnings=[] if concept else list(self.warnings),
-            )
+        matches = {path: self._match(raw) for path, raw in profile_skill_paths(profile)}
         return ProfileSkills(matches=matches, versions=VERSIONS)
+
+    def normalize_skills(self, raws, context=None, *, use_llm=True) -> list[SkillMatch]:
+        self.typed.append((list(raws), use_llm))
+        return [self._match(raw) for raw in raws]
+
+    def _match(self, raw: str) -> SkillMatch:
+        concept = self.known.get(raw.lower())
+        return SkillMatch(
+            raw=raw, normalized=raw.lower(), concept_id=concept,
+            preferred_label=raw if concept else None,
+            tier=MatchTier.EXACT if concept else MatchTier.UNMATCHED,
+            warnings=[] if concept else list(self.warnings),
+        )
 
 
 def vacancy(vid: str, required: list[str]) -> VacancyFeatures:
@@ -81,7 +87,7 @@ def vacancy(vid: str, required: list[str]) -> VacancyFeatures:
     return VacancyFeatures(id=vid, source="synthetic", title=f"Role {vid}", required_skills=refs)
 
 
-VACANCIES = [vacancy("both", ["python", "sql"]), vacancy("one", ["python", "rust"]),
+VACANCIES = [vacancy("both", ["python", "sql"]), vacancy("one", ["python", "sql", "rust"]),
              vacancy("none", ["rust", "go"])]
 
 

@@ -76,8 +76,15 @@ from jobpdf.normalization.service import (
     get_normalization_service,
 )
 from jobpdf.ranking.eligibility import experience_adjustments, merge_adjustments
+from jobpdf.ranking.insights import InsightsResult, compute_insights
 from jobpdf.ranking.models import CandidateSkills, VacancyFeatures
-from jobpdf.ranking.score import RankingResult, Scorer, VacancyAdjustment, rank_vacancies
+from jobpdf.ranking.score import (
+    LinearScorer,
+    RankingResult,
+    Scorer,
+    VacancyAdjustment,
+    rank_vacancies,
+)
 from jobpdf.ranking.semantic import CandidateVectors, embed_candidate
 
 log = logging.getLogger(__name__)
@@ -173,6 +180,10 @@ class PipelineResult(_Frozen):
     timings_ms: dict[str, int]  # per stage, plus "total"
     input_tokens: int  # extraction LLM usage
     output_tokens: int
+    # What the report needs to re-rank without the CV (JM-53), and JM-42's insights.
+    vectors: CandidateVectors | None = None
+    experience_months: int | None = None  # counted_experience_months
+    insights: InsightsResult | None = None
 
 
 # --- entry point -------------------------------------------------------------------
@@ -257,13 +268,11 @@ def analyze_cv(
 
     if not vacancies:
         warnings.add("ranking", NO_VACANCIES)
-    options = {} if scorer is None else {"scorer": scorer}
     _notify(on_stage, "ranking")
     with _timed(timings, "ranking"):
         months = counted_experience_months(profile, extraction.warnings)
-        adjustments = merge_adjustments(adjustments or {},
-                                        experience_adjustments(vacancies, months))
-        ranking = rank_vacancies(candidate_skills, vectors, vacancies, adjustments, **options)
+        ranking, insights = rank_profile(candidate_skills, vectors, vacancies, months,
+                                         adjustments=adjustments, scorer=scorer)
     warnings.add_many("ranking", ranking.warnings)
 
     timings["total"] = round((time.perf_counter() - started) * 1000)
@@ -287,9 +296,32 @@ def analyze_cv(
         timings_ms=timings,
         input_tokens=extraction.input_tokens,
         output_tokens=extraction.output_tokens,
+        vectors=vectors,
+        experience_months=months,
+        insights=insights,
     )
     _log_summary(result)
     return result
+
+
+def rank_profile(
+    candidate_skills: CandidateSkills,
+    vectors: CandidateVectors | None,
+    vacancies: Sequence[VacancyFeatures],
+    experience_months: int | None,
+    *,
+    adjustments: Mapping[str, VacancyAdjustment] | None = None,
+    scorer: Scorer | None = None,
+) -> tuple[RankingResult, InsightsResult]:
+    """The ranking stage: JM-47's experience cap on top of ``adjustments``, the ranking, then
+    JM-42's insights with the same scorer and adjustments. ``analyze_cv`` and the report's
+    update (JM-53) both call it, so a re-ranked page is scored exactly like the first one."""
+    scorer = scorer if scorer is not None else LinearScorer()
+    adjustments = merge_adjustments(adjustments or {},
+                                    experience_adjustments(vacancies, experience_months))
+    ranking = rank_vacancies(candidate_skills, vectors, vacancies, adjustments, scorer,
+                             experience_months=experience_months)
+    return ranking, compute_insights(candidate_skills, ranking, scorer, adjustments)
 
 
 def counted_experience_months(profile: CandidateProfile, extraction_warnings: Iterable[str]

@@ -3,6 +3,7 @@ a scripted LLM; the names come from a plain dictionary, so no test needs a datab
 
 import json
 import logging
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -34,7 +35,15 @@ def uk_skill(name: str, label: str, concept: str) -> SkillOut:
 
 @pytest.fixture(scope="module")
 def response():
-    return build_response(run())
+    """As in test_view: the skills only in the skills list."""
+    full = build_response(run())
+    jobs = [job.model_copy(update={"skills": []}) for job in full.profile.experience]
+    return full.model_copy(update={"profile": full.profile.model_copy(update={"experience": jobs})})
+
+
+def without_state(html: str) -> str:
+    """The page without its update state, which also records the language asked for (JM-53)."""
+    return re.sub(r'name="state" value="[^"]*"', 'name="state"', html)
 
 
 def services_with(names=NAMES, **changes) -> Services:
@@ -147,11 +156,14 @@ def test_within_reach_and_skills_to_learn_use_the_names_too(response) -> None:
     localized = build_report(
         response.model_copy(update={"matches": [match], "insights": insights}), NAMES)
 
-    assert report.reach == [
+    assert [r.text for r in report.reach] == [
         "Data engineer at Acme: add Kubernetes and JavaScript to reach a strong match."]
-    assert localized.reach == [
+    assert [r.text for r in localized.reach] == [
         "Data engineer at Acme: add Kubernetes (оркестрація) and ДжейЕс to reach a strong match."]
-    assert localized.reach[0].uk == ("Kubernetes (оркестрація)", "ДжейЕс")
+    assert localized.reach[0].text.uk == ("Kubernetes (оркестрація)", "ДжейЕс")
+    # the "I have this" ticks show the Ukrainian name but add the skill by its English one
+    assert [(t.label, t.value, t.uk) for t in localized.reach[0].skills] == [
+        ("Kubernetes (оркестрація)", "Kubernetes", True), ("ДжейЕс", "JavaScript", True)]
     assert localized.learn == [
         "Kubernetes (оркестрація): would make 2 more jobs a strong match."]
     assert localized.learn[0].uk == ("Kubernetes (оркестрація)",)
@@ -174,7 +186,7 @@ def test_the_names_change_no_number_and_no_order(response) -> None:
     assert localized.figures == plain.figures
     assert [(j.rank, j.title, j.band, j.fit, j.coverage, j.segments) for j in localized.rest] == [
         (j.rank, j.title, j.band, j.fit, j.coverage, j.segments) for j in plain.rest]
-    assert [s.unsure for s in localized.skills] == [s.unsure for s in plain.skills]
+    assert [s.value for s in localized.skills] == [s.value for s in plain.skills]
 
 
 def test_a_line_is_a_plain_string_that_also_lists_its_names() -> None:
@@ -307,7 +319,7 @@ def test_the_names_are_read_once_per_ukrainian_report() -> None:
 def test_a_report_without_names_is_the_english_one(names) -> None:
     english = page(services_with(), lang="en")
 
-    assert page(services_with(names), lang="uk") == english
+    assert without_state(page(services_with(names), lang="uk")) == without_state(english)
 
 
 def test_names_that_cannot_be_read_give_the_english_report_not_an_error(caplog) -> None:
@@ -406,11 +418,12 @@ def test_the_report_page_marks_the_names_in_every_section(response) -> None:
     report = build_report(response.model_copy(update={
         "matches": [match], "insights": insights, "profile": profile}), NAMES)
 
-    html = routes._render("report.html", report=report)
+    html = routes.render_report(report, "state")
 
     span = '<span lang="uk">Kubernetes (оркестрація)</span>'
     assert f"Missing: {span}." in html
     assert f"add {span} to reach a strong match." in html
+    assert f'value="Kubernetes"> I have {span}</label>' in html
     assert f"<li>{span}: would make 1 more job a strong match.</li>" in html
     assert '<li>JS was read as <span lang="uk">ДжейЕс</span>.</li>' in html
     assert '<li lang="uk">ДжейЕс</li>' in html

@@ -14,16 +14,19 @@ Metrics, per candidate:
 - Band agreement with JM-25's expected band: accuracy and macro-F1.
 - Across all pairs: ROC AUC of the raw semantic cosine, grade 3 against grade 0.
 
-Matching modes say how skills become keys: ``perfect`` uses JM-25's ground truth,
-``raw`` uses ``normalize()`` only (no taxonomy, the baseline for the core claim), and
-``real`` runs JM-20's normalization service. Variants say how the score is combined:
-the current weights, skills only, semantic only, a weight sweep, fit order without
-bands, and a TF-IDF text baseline with no skills and no model.
+Matching modes say how skills become keys: ``perfect`` uses JM-25's ground truth, ``raw``
+uses ``normalize()`` only (no taxonomy, the baseline for the core claim), and ``real``
+runs JM-20's normalization service. Variants say how the score is combined: the current
+weights and bands from the fit plus skill coverage (JM-56), the formula before JM-56 (0.63
+/ 0.27 / 0.10 with coverage bands), the current weights with those old bands, skills only,
+semantic only, a weight sweep, fit order without bands, and a TF-IDF text baseline with no
+skills and no model.
 
 Two tuning steps pick values by grouped cross-validation (folds split candidates, never
-pairs): the skill weight, and the band thresholds. A tuned value is recommended only
-when its held-out paired difference to the current setting has a 95% bootstrap
-interval above zero (``decide``); otherwise the current constant stays.
+pairs): the skill weight (years keep their share), and the fit thresholds of the bands. A
+tuned value is recommended only when its held-out paired difference to the current setting
+has a 95% bootstrap interval above zero (``decide``); otherwise the current constant
+stays.
 
 Pure numpy; prints and stores numbers only, never CV or vacancy text.
 """
@@ -47,13 +50,18 @@ from jobpdf.ranking.overlap import SkillOverlap, skill_overlap
 from jobpdf.ranking.score import (
     BAND_ORDER,
     PARTIAL_COVERAGE,
-    SEM_MIN,
+    PARTIAL_FIT,
     STRONG_COVERAGE,
+    STRONG_FIT,
+    W_EXPERIENCE,
+    W_SEMANTIC,
     W_SKILL,
     Band,
     FitComponents,
     LinearScorer,
     assign_band,
+    experience_fit,
+    skill_coverage,
 )
 from jobpdf.ranking.scorer_eval import spearman
 from jobpdf.ranking.semantic import (
@@ -75,15 +83,17 @@ DEFAULT_K = 10
 DEFAULT_FOLDS = 5
 DEFAULT_SEED = 26
 BOOTSTRAP_SAMPLES = 2000
-WEIGHT_GRID = (0.5, 0.6, 0.7, 0.8, 0.9)
-STRONG_GRID = (0.7, 0.75, 0.8, 0.85, 0.9)
-PARTIAL_GRID = (0.4, 0.5, 0.6)
-SEM_MIN_GRID = (0.2, 0.3, 0.4)
+WEIGHT_GRID = (0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55)  # skill; semantic gets the rest
+STRONG_GRID = (0.6, 0.65, 0.7, 0.75, 0.8)
+PARTIAL_GRID = (0.5, 0.55, 0.6, 0.65, 0.7)  # skill coverage stays at its constants
+CURRENT_WEIGHTS = (W_SKILL, W_SEMANTIC, W_EXPERIENCE)
+BEFORE_WEIGHTS = (0.63, 0.27, 0.10)  # before JM-56: 0.7 / 0.3, then 10% for years
 # A 95% interval on the headline Spearman wider than this means the set is too small
 # to decide anything: regenerate JM-25 larger (--vacancies-per-family 10 --candidates 40).
 NOISY_CI_WIDTH = 0.1
 BANDS = ("strong", "partial", "weak")
 CURRENT = "current"
+BEFORE = "before"
 TFIDF = "tfidf"
 _TOKEN = re.compile(r"\w+", re.UNICODE)
 
@@ -182,6 +192,7 @@ class PairData:
     overlap: SkillOverlap
     semantic: float | None  # calibrated 0..1
     semantic_raw: float | None  # cosine before rescaling
+    experience: float | None  # experience_fit of the candidate's months and the vacancy's years
     tfidf: float
     posted: float | None
 
@@ -292,6 +303,7 @@ def build_pairs(dataset: Dataset, mode: str, *, embedder: Any = None,
                             strict=True):
                 semantic[(c.id, v.id)] = (s.score, s.raw)
     truth = dataset.truth.candidates
+    months = {c.id: c.profile.total_experience_months for c in dataset.candidates}
     out = []
     for p in dataset.pairs:
         vacancy = vacancies[p.vacancy_id]
@@ -301,6 +313,7 @@ def build_pairs(dataset: Dataset, mode: str, *, embedder: Any = None,
             expected_band=p.expected_band, trap=truth[p.candidate_id].trap,
             overlap=skill_overlap(candidates[p.candidate_id], vacancy),
             semantic=sem, semantic_raw=raw,
+            experience=experience_fit(vacancy.min_years_experience, months[p.candidate_id]),
             tfidf=float(tfidf[c_index[p.candidate_id], v_index[p.vacancy_id]]),
             posted=_timestamp(vacancy.posted_at),
         ))
@@ -312,43 +325,61 @@ def build_pairs(dataset: Dataset, mode: str, *, embedder: Any = None,
 
 @dataclass(frozen=True)
 class Thresholds:
-    strong: float = STRONG_COVERAGE
-    partial: float = PARTIAL_COVERAGE
-    sem_min: float = SEM_MIN
+    strong: float = STRONG_FIT
+    partial: float = PARTIAL_FIT
+    strong_coverage: float = STRONG_COVERAGE
+    partial_coverage: float = PARTIAL_COVERAGE
 
 
 @dataclass(frozen=True)
 class Variant:
     name: str
-    w_skill: float | None  # None: the TF-IDF baseline
-    use_semantic: bool = True
+    weights: tuple[float, float, float] | None  # skill, semantic, years; None: TF-IDF
     use_bands: bool = True
+    coverage_bands: bool = False  # the band rule before JM-56
     thresholds: Thresholds = field(default_factory=Thresholds)
 
 
 def standard_variants() -> list[Variant]:
     return [
-        Variant(CURRENT, W_SKILL),
-        Variant("skills_only", 1.0, use_semantic=False),
-        Variant("semantic_only", 0.0),
-        *[Variant(f"w_skill={w:.1f}", w) for w in WEIGHT_GRID if not math.isclose(w, W_SKILL)],
-        Variant("fit_order", W_SKILL, use_bands=False),
-        Variant(TFIDF, None, use_semantic=False, use_bands=False),
+        Variant(CURRENT, CURRENT_WEIGHTS),
+        Variant(BEFORE, BEFORE_WEIGHTS, coverage_bands=True),
+        Variant("coverage_bands", CURRENT_WEIGHTS, coverage_bands=True),
+        Variant("skills_only", (1.0, 0.0, 0.0)),
+        Variant("semantic_only", (0.0, 1.0, 0.0)),
+        *[v for v in weight_candidates() if v.weights != CURRENT_WEIGHTS],
+        Variant("fit_order", CURRENT_WEIGHTS, use_bands=False),
+        Variant(TFIDF, None, use_bands=False),
     ]
+
+
+def coverage_band(overlap: SkillOverlap, semantic: float | None) -> Band:
+    """The band rule before JM-56: at least 80% of the required skills and past work at least
+    0.3 for strong, 50% for partial. Kept only so ``before`` reproduces the old numbers."""
+    basis = skill_coverage(overlap)
+    semantic_ok = semantic is None or semantic >= 0.3
+    if basis is None:
+        return Band.UNSCORED if semantic is None else Band.PARTIAL if semantic_ok else Band.WEAK
+    if basis >= 0.8 and semantic_ok:
+        return Band.STRONG
+    return Band.PARTIAL if basis >= 0.5 else Band.WEAK
 
 
 def score_pair(pair: PairData, variant: Variant) -> tuple[float | None, Band | None]:
     """(fit, band) under a variant; band is None when the variant does not use bands."""
-    if variant.w_skill is None:
+    if variant.weights is None:
         return pair.tfidf, None
-    semantic = pair.semantic if variant.use_semantic else None
     components = FitComponents(skill=pair.overlap.score,
                                required_coverage=pair.overlap.required_coverage,
-                               semantic=semantic, semantic_raw=None)
-    fit = LinearScorer(variant.w_skill, 1 - variant.w_skill).score(components)
+                               semantic=pair.semantic, semantic_raw=None,
+                               experience=pair.experience)
+    fit = LinearScorer(*variant.weights).score(components)
+    if variant.coverage_bands:
+        return fit, coverage_band(pair.overlap, pair.semantic)
     t = variant.thresholds
-    band, _ = assign_band(pair.overlap, semantic, strong_coverage=t.strong,
-                          partial_coverage=t.partial, sem_min=t.sem_min)
+    band, _ = assign_band(fit, skill_coverage(pair.overlap), strong_fit=t.strong,
+                          strong_coverage=t.strong_coverage, partial_fit=t.partial,
+                          partial_coverage=t.partial_coverage)
     return fit, band
 
 
@@ -491,13 +522,13 @@ def mean_spearman(results: Sequence[CandidateResult]) -> float:
 
 
 def weight_candidates() -> list[Variant]:
-    return [Variant(f"w_skill={w:.1f}", w) for w in WEIGHT_GRID]
+    return [Variant(f"w_skill={w:.2f}", (w, round(1 - W_EXPERIENCE - w, 2), W_EXPERIENCE))
+            for w in WEIGHT_GRID]
 
 
 def threshold_candidates() -> list[Variant]:
-    return [Variant(f"strong={s},partial={p},sem_min={m}", W_SKILL,
-                    thresholds=Thresholds(s, p, m))
-            for s in STRONG_GRID for p in PARTIAL_GRID for m in SEM_MIN_GRID if p < s]
+    return [Variant(f"strong={s},partial={p}", CURRENT_WEIGHTS, thresholds=Thresholds(s, p))
+            for s in STRONG_GRID for p in PARTIAL_GRID if p < s]
 
 
 def decide(comparison: Mapping[str, Any], chosen: Sequence[str]) -> dict[str, Any]:
