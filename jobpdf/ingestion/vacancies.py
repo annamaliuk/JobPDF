@@ -38,6 +38,7 @@ import psycopg
 from pydantic import BaseModel, ConfigDict
 
 from jobpdf.ingestion import remotive
+from jobpdf.ingestion.posting_niches import posting_niches
 from jobpdf.ingestion.requirements import RequirementExtractor, Requirements
 from jobpdf.ingestion.sources.models import SourcePosting
 from jobpdf.ingestion.sources.registry import SOURCE_NAMES, build_adapter
@@ -147,6 +148,7 @@ def build_features(
             company=posting.company, url=posting.url, posted_at=posting.posted_at,
             location_raw=posting.location_raw,
             work_mode=classify_work_mode(posting), country=posting_country(posting),
+            niches=posting_niches(posting),
             required_skills=_refs(groups["required"]),
             preferred_skills=_refs(groups["preferred"]),
             responsibilities=requirements.responsibilities,

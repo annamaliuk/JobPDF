@@ -1,4 +1,5 @@
-"""Which vacancies a candidate should not be shown, or not shown as strong (JM-49, JM-47).
+"""Which vacancies a candidate should not be shown, or not shown as strong (JM-49, JM-47,
+JM-51).
 
 Each rule turns what is known about the candidate into ``VacancyAdjustment`` objects, the shape
 ``rank_vacancies`` already reads: a vacancy it hides is still fully scored and listed in the
@@ -10,11 +11,16 @@ ranking's ``hidden`` list, never dropped, and its ``reasons`` say why.
   that do not include the candidate's ("USA only", "EU only") is hidden.
 - Experience (JM-47): a vacancy that asks for at least ``EXPERIENCE_MARGIN_MONTHS`` more
   experience than the CV shows is capped at partial. It is never hidden for this.
+- Risky industries (JM-51): a vacancy tagged with an industry the candidate chose to avoid
+  (``jobpdf/niches.py``) is hidden. A vacancy with no tags, which includes every vacancy stored
+  before the tags existed until it is processed again, is never hidden.
 
 Nothing happens when something is not known (the mode, the place, the country, the months):
 showing a job the person cannot take costs a glance, hiding one they could take costs the job.
 The two place rules need the candidate's country (``location_adjustments``); the experience rule
-needs only the CV (``experience_adjustments``).
+needs only the CV (``experience_adjustments``); the industry rule needs the industries chosen
+(``niche_adjustments``). ``merge_adjustments`` joins them: a vacancy hidden for two reasons
+carries both.
 
 The countries are ISO 3166-1 alpha-2 codes; ``normalize_country`` is the one place that turns
 text into one.
@@ -22,8 +28,9 @@ text into one.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 
+from jobpdf.niches import known as known_niches
 from jobpdf.places import allowed_countries, is_country
 from jobpdf.ranking.models import VacancyFeatures
 from jobpdf.ranking.score import BAND_ORDER, Band, VacancyAdjustment
@@ -32,7 +39,9 @@ from jobpdf.ranking.score import BAND_ORDER, Band, VacancyAdjustment
 ON_SITE_ABROAD = "on_site_abroad"
 REMOTE_OUTSIDE_REGION = "remote_outside_region"
 EXPERIENCE_SHORT = "experience_short"
+RISKY_NICHE = "risky_niche"
 LOCATION_REASONS = frozenset({ON_SITE_ABROAD, REMOTE_OUTSIDE_REGION})
+HIDING_REASONS = LOCATION_REASONS | {RISKY_NICHE}  # the reasons for hiding that pages can word
 
 NOT_REMOTE_MODES = frozenset({"on_site", "hybrid"})
 EXPERIENCE_MARGIN_MONTHS = 30  # 2.5 years short of the posting's minimum caps the band
@@ -61,6 +70,10 @@ def is_remote_outside_region(vacancy: VacancyFeatures, home_country: str) -> boo
 def is_experience_short(vacancy: VacancyFeatures, experience_months: int) -> bool:
     years = vacancy.min_years_experience
     return bool(years) and experience_months + EXPERIENCE_MARGIN_MONTHS <= years * 12
+
+
+def is_in_avoided_niche(vacancy: VacancyFeatures, avoid: Sequence[str]) -> bool:
+    return any(code in vacancy.niches for code in avoid)
 
 
 def abroad_adjustments(vacancies: Sequence[VacancyFeatures],
@@ -96,6 +109,17 @@ def experience_adjustments(vacancies: Sequence[VacancyFeatures],
         return {}
     return _agreed(vacancies, lambda v: is_experience_short(v, experience_months),
                    VacancyAdjustment(band_cap=Band.PARTIAL, reasons=[EXPERIENCE_SHORT]))
+
+
+def niche_adjustments(vacancies: Sequence[VacancyFeatures],
+                      avoid_niches: Iterable[str] | None) -> Mapping[str, VacancyAdjustment]:
+    """The vacancies to hide for being in an avoided industry; empty when none is chosen.
+    Codes that are not in ``niches.py`` are ignored."""
+    avoid = known_niches(avoid_niches)
+    if not avoid:
+        return {}
+    return _agreed(vacancies, lambda v: is_in_avoided_niche(v, avoid),
+                   VacancyAdjustment(hidden=True, reasons=[RISKY_NICHE]))
 
 
 def merge_adjustments(*maps: Mapping[str, VacancyAdjustment]) -> dict[str, VacancyAdjustment]:
