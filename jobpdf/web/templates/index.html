@@ -43,6 +43,14 @@
     <p id="{{ home_field }}-hint" class="quiet hint">Choose the country you live in to leave out jobs that
       need you in an office, or part of the week in one, in another country, and remote jobs open only
       to people in other countries. Remote jobs open to your country stay.</p>
+    <fieldset class="field" aria-describedby="niches-hint">
+      <legend>Hide jobs in these industries</legend>
+{% for field_id, label in niche_choices %}
+      <label class="check"><input type="checkbox" name="{{ field_id }}" value="1"> {{ label }}</label>
+{% endfor %}
+      <p id="niches-hint" class="quiet hint">Decided from each job's text. A job is left out only
+        when its text is clearly about the industry; if it is unclear, the job stays.</p>
+    </fieldset>
     <div class="actions">
       <button type="submit">Check my CV</button>
 {% if sample_path %}

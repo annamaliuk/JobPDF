@@ -96,6 +96,7 @@ class VacancyFeatures(_ContractModel):
     location_raw: str | None = None  # source text, unchanged
     work_mode: Literal["remote", "hybrid", "on_site"] | None = None  # None: not known (JM-49)
     country: str | None = None  # ISO 3166-1 alpha-2 of the place; None: not known (JM-49)
+    niches: list[str] = Field(default_factory=list)  # risky industries, codes of niches.py (JM-51)
     # vacancy extraction + normalization
     required_skills: list[SkillRef] = Field(default_factory=list)
     preferred_skills: list[SkillRef] = Field(default_factory=list)

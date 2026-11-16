@@ -249,7 +249,9 @@ def response() -> AnalysisResponse:
 
 
 def with_hidden(response, reasons: dict[str, int], count: int, matches=None) -> AnalysisResponse:
-    update = {"hidden_reasons": reasons, "hidden_count": count}
+    # each hidden vacancy has at most one reason here, so the rest have none the page knows
+    update = {"hidden_reasons": reasons, "hidden_count": count,
+              "hidden_unexplained": count - sum(reasons.values())}
     if matches is not None:
         update["matches"] = matches
     return response.model_copy(update=update)

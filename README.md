@@ -325,19 +325,43 @@ table, notes on data quality and how the fit is scored. Close the page and it is
   all remote. The place list is small (94 countries and the largest cities), so a posting in a
   small town without a country is kept.
   The new fields (`work_mode`, `country`) are part of the stored vacancy, and the ingestion
-  version in `jobpdf/ingestion/store.py` (`HASH_VERSION`) was raised to 2: **after deploying,
+  version in `jobpdf/ingestion/store.py` (`HASH_VERSION`) was raised: **after deploying,
   every stored vacancy is re-processed once** by the normal ingest runs (at most 200
-  postings per run, newest first, so a large table needs several runs), and until a vacancy is re-processed it has no
-  work mode and is never hidden. The JSON API is unchanged except that its response now has
+  postings per run, newest first, so a large table needs several runs), and until a vacancy is
+  re-processed it has no work mode and is never hidden. The JSON API is unchanged except that its response now has
   `hidden_reasons` (`{}` unless something was hidden); it has no country parameter.
 - **Experience check.** A vacancy that asks for at least 2.5 years more experience than the CV
   shows (`EXPERIENCE_MARGIN_MONTHS` in `jobpdf/ranking/eligibility.py`) is at most a partial
   match; it is never hidden for this, and its card says why. A CV with no jobs counts as 0
   months. When a job in the CV has a date that could not be counted, the total would be too
   low, so no vacancy is capped. This applies to the web page and the JSON API alike.
+- **Hide jobs in risky industries.** Under "Hide jobs in these industries" the upload form has
+  one checkbox per industry: gambling and betting, crypto and blockchain, forex and binary
+  options, adult content, network marketing (MLM). Nothing is ticked by default. A ticked
+  industry leaves out the jobs tagged with it, and the report says how many ("3 postings in
+  gambling or crypto left out, as you asked."); if that is every job, the page says so and how to
+  see them. It works together with "Where do you live?": a job left out for both reasons is
+  counted once in the total and named in both notes. The choice is not stored and is not logged.
+  How a vacancy is tagged: when it is ingested, the title, company, tags, category and the start
+  of the description are checked against each industry's word list (`jobpdf/niches.py`, the one
+  table that also builds the form), and the codes are stored on the vacancy as `niches`. An
+  industry counts when one of its words is in the title, company, tags or category, or appears
+  **at least twice** in the description, so "blockchain experience is a plus" does not hide a job.
+  Only words that mean the industry are listed ("cryptography", "gaming", "bet" and "CFD" alone
+  are not), in English with German and Ukrainian equivalents. A job with no tag, or whose
+  description is missing, is **kept**; hiding a job the person could take is worse than showing
+  one they may not want. The lists are short on purpose: a company in one of these industries
+  that never names it will not be caught, and a job that names it twice in passing will be.
+  To add an industry, add an entry to `NICHES`; the form and the report follow, and stored
+  vacancies learn about it when they are processed again. `HASH_VERSION` is 3 for this, so
+  **every stored vacancy is re-processed once more** after it is deployed (same limit per run),
+  and until a vacancy is re-processed it has no tags and is never hidden. The JSON API has no
+  industry parameter; its response has `hidden_unexplained`, the number of hidden vacancies
+  none of whose reasons the pages can word (0 unless a future rule hides some).
 - **Try a sample CV.** When the app has a sample CV, the upload form shows a second button, "Try
   a sample CV", and a link to see that CV. The button runs the whole pipeline on the sample with
-  the choices on the form (skill names, "Where do you live?") and shows the usual report, headed
+  the choices on the form (skill names, "Where do you live?", industries) and shows the usual
+  report, headed
   "Report for a sample CV" with a line saying it is not the visitor's. It goes to
   `POST /report/sample` (no file is sent; one chosen anyway is ignored) and shares everything
   with an upload: the per-address limit, the limit on analyses at once, the progress steps and

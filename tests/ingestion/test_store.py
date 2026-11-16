@@ -88,9 +88,9 @@ def test_the_posted_time_and_identity_do_not_change_the_hash() -> None:
 def test_the_hash_is_pinned_so_an_accidental_change_is_noticed() -> None:
     # If this fails you changed what counts as "changed": bump HASH_VERSION on purpose,
     # because every stored vacancy will be reprocessed once.
-    assert HASH_VERSION == "2"
+    assert HASH_VERSION == "3"
     assert content_hash(posting(1)) == (
-        "39c1b269f461945089d397f80843d60b6d56a02c5a332d5c59f852320d4aac26")
+        "ee35b7edd2d5de64e9c73621a3c8f19c9005ded6f1f841e68e4763962d6f889c")
 
 
 # --- stale versions --------------------------------------------------------------------
