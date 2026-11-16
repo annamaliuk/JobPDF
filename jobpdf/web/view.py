@@ -32,16 +32,17 @@ from urllib.parse import urlsplit
 from jobpdf.api.response import AnalysisResponse, MatchOut, SkillOut
 from jobpdf.niches import known as known_niches
 from jobpdf.niches import short_name
+from jobpdf.normalization.text import normalize
 from jobpdf.places import country_name
 from jobpdf.ranking.eligibility import (
-    EXPERIENCE_MARGIN_MONTHS,
     EXPERIENCE_SHORT,
     LOCATION_REASONS,
     ON_SITE_ABROAD,
     REMOTE_OUTSIDE_REGION,
     RISKY_NICHE,
 )
-from jobpdf.ranking.score import Band
+from jobpdf.ranking.models import RAW_KEY_PREFIX
+from jobpdf.ranking.score import EXPERIENCE_MARGIN_MONTHS, Band
 
 BEST_COUNT = 5  # matches shown as full rows; the rest are in the table
 MAX_MISSING_SHOWN = 6
@@ -130,8 +131,16 @@ class Job:
 @dataclass(frozen=True)
 class SkillLine:
     label: str
-    unsure: bool
+    value: str  # what its tick sends: the skill's key to remove it, or a name to add (JM-53)
+    written: str | None = None  # the CV's own wording when the label differs ("JS")
     uk: bool = False  # the label is a Ukrainian name (JM-46)
+    recognised: bool = True  # an added skill may not be in the skill list
+
+
+@dataclass(frozen=True)
+class Reach:
+    text: str  # "Data Engineer at Acme: add dbt to reach a strong match."
+    skills: list[SkillLine]  # the skills it names, each with an "I have this" tick
 
 
 @dataclass(frozen=True)
@@ -140,9 +149,11 @@ class Report:
     figures: list[Figure]
     best: list[Job]
     rest: list[Job]  # every match, in rank order (the table), including the best ones
-    reach: list[str] = field(default_factory=list)
+    reach: list[Reach] = field(default_factory=list)
     learn: list[str] = field(default_factory=list)
-    skills: list[SkillLine] = field(default_factory=list)
+    skills: list[SkillLine] = field(default_factory=list)  # used for matching
+    check: list[SkillLine] = field(default_factory=list)  # matched, but not sure how
+    added: list[SkillLine] = field(default_factory=list)  # typed in on the page (JM-53)
     readings: list[str] = field(default_factory=list)
     unrecognised: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
@@ -157,18 +168,22 @@ def build_report(response: AnalysisResponse, names: Mapping[str, str] | None = N
     labels = _Labels(names)
     jobs = [_job(m, labels) for m in response.matches]
     by_id = {m.vacancy.id: m for m in response.matches}
-    skills = _unique_skills(response.profile.skills)
+    every = _unique_skills([*response.profile.skills,
+                            *(s for job in response.profile.experience for s in job.skills)])
+    from_cv = [s for s in every if not s.added]
+    used = [s for s in from_cv if s.recognised and not s.low_confidence]
     return Report(
         summary=_clean(response.profile.summary),
-        figures=_figures(response, skills),
+        figures=_figures(response, every),
         best=jobs[:BEST_COUNT],
         rest=jobs,
         reach=_reach(response, by_id, labels),
         learn=_learn(response, labels),
-        skills=[SkillLine(labels.name(s), s.low_confidence, labels.is_ukrainian(s))
-                for s in skills if s.recognised],
-        readings=_readings(skills, labels),
-        unrecognised=[s.name for s in skills if not s.recognised],
+        skills=[_chip(s, labels) for s in used],
+        check=[_chip(s, labels) for s in from_cv if s.recognised and s.low_confidence],
+        added=[_chip(s, labels) for s in every if s.added],
+        readings=_readings(used, labels),
+        unrecognised=[s.name for s in from_cv if not s.recognised],
         notes=_notes(response, home_country, avoid_niches),
         scoring=_scoring(response),
         empty=None if jobs else _empty(response),
@@ -214,8 +229,11 @@ def _figures(response: AnalysisResponse, skills: list[SkillOut]) -> list[Figure]
     months = response.profile.total_experience_months
     if months is not None:
         figures.append(Figure(_duration(months), "Experience"))
-    recognised = sum(1 for s in skills if s.recognised)
-    figures.append(Figure(f"{recognised} of {len(skills)}", "Skills recognised"))
+    from_cv = [s for s in skills if not s.added]
+    recognised = sum(1 for s in from_cv if s.recognised)
+    figures.append(Figure(f"{recognised} of {len(from_cv)}", "Skills recognised"))
+    if len(from_cv) < len(skills):
+        figures.append(Figure(str(len(skills) - len(from_cv)), "Added by you"))
     figures.append(Figure(str(response.band_counts.get(Band.STRONG, 0)), "Strong matches"))
     figures.append(Figure(str(response.pagination.total), "Jobs compared"))
     return figures
@@ -284,12 +302,26 @@ def _segments(have: int, total: int) -> tuple[bool, ...]:
     return (True,) * filled + (False,) * (MAX_SEGMENTS - filled)
 
 
+def _chip(skill: SkillOut, labels: _Labels) -> SkillLine:
+    """A skill with its remove tick; ``written`` when the CV words it differently."""
+    shown = labels.name(skill)
+    written = skill.name.strip()
+    return SkillLine(shown, skill_key(skill),
+                     written if skill.recognised and written.lower() != shown.lower() else None,
+                     labels.is_ukrainian(skill), skill.recognised)
+
+
+def skill_key(skill: SkillOut) -> str:
+    """The key ranking compares by (``SkillRef.key``), which the update's remove ticks send."""
+    return skill.concept_id or RAW_KEY_PREFIX + normalize(skill.name)
+
+
 def _unique_skills(skills: list[SkillOut]) -> list[SkillOut]:
     """One entry per skill: recognised ones by concept, the others by their written name."""
     seen: set[str] = set()
     unique = []
     for skill in skills:
-        key = skill.concept_id or f"raw:{skill.name.strip().lower()}"
+        key = skill_key(skill)
         if key not in seen:
             seen.add(key)
             unique.append(skill)
@@ -307,7 +339,7 @@ def _readings(skills: list[SkillOut], labels: _Labels) -> list[str]:
 
 
 def _reach(response: AnalysisResponse, matches: dict[str, MatchOut],
-           labels: _Labels) -> list[str]:
+           labels: _Labels) -> list[Reach]:
     if not response.insights.computed:
         return []
     lines = []
@@ -317,8 +349,12 @@ def _reach(response: AnalysisResponse, matches: dict[str, MatchOut],
             continue
         names = " and ".join(labels.name(s) for s in item.missing)
         where = f" at {match.vacancy.company}" if match.vacancy.company else ""
-        lines.append(labels.line(
-            f"{match.vacancy.title}{where}: add {names} to reach a strong match.", item.missing))
+        text = labels.line(f"{match.vacancy.title}{where}: add {names} to reach a strong match.",
+                           item.missing)
+        # The tick adds the skill by its English name, which the update matches exactly.
+        ticks = [SkillLine(labels.name(s), s.label or s.name, uk=labels.is_ukrainian(s))
+                 for s in item.missing]
+        lines.append(Reach(text, ticks))
     return lines
 
 
@@ -398,19 +434,24 @@ def _niche_names(codes: Sequence[str]) -> str:
 
 def _scoring(response: AnalysisResponse) -> list[str]:
     weights, limits = response.scoring.weights, response.scoring.thresholds
-    skill, experience = weights.get("skill"), weights.get("semantic")
-    if skill is not None and experience is not None:
-        lines = [f"Each job's fit is {percent(skill)} your skills against the skills it asks "
-                 f"for and {percent(experience)} how closely your past work resembles the "
-                 "job's duties."]
+    past, skill, years = weights.get("semantic"), weights.get("skill"), weights.get("experience")
+    if past is not None and skill is not None and years:
+        lines = [f"Each job's fit is {percent(past)} how closely your past work resembles the "
+                 f"job's duties, {percent(skill)} your skills against the skills it asks for, "
+                 f"and {percent(years)} how close you come to the years of experience it asks "
+                 "for.",
+                 "When a job doesn't state the years, or your CV's dates can't be counted, the "
+                 f"other two parts share that {percent(years)}."]
     else:
-        lines = ["Each job's fit is worked out from your skills and your past work."]
-    strong, partial = limits.get("strong_coverage"), limits.get("partial_coverage")
-    if strong is not None and partial is not None:
-        lines.append(
-            f"A strong match means you have at least {percent(strong)} of the required skills "
-            f"and your experience is not far off. A partial match means at least "
-            f"{percent(partial)}. Anything lower is weak.")
+        lines = ["Each job's fit is worked out from your past work, your skills and your years "
+                 "of experience."]
+    strong, partial = limits.get("strong_fit"), limits.get("partial_fit")
+    strong_skills, partial_skills = limits.get("strong_coverage"), limits.get("partial_coverage")
+    if None not in (strong, partial, strong_skills, partial_skills):
+        lines.append(f"A strong match has a fit of {percent(strong)} or more and at least "
+                     f"{percent(strong_skills)} of the required skills. A partial match has a "
+                     f"fit of {percent(partial)} or more and at least {percent(partial_skills)} "
+                     "of them. Anything lower is weak.")
         lines.append(f"A job that asks for at least {EXPERIENCE_MARGIN_MONTHS / 12:g} more years "
                      "of experience than your CV shows is at most a partial match.")
     if response.scoring.semantic_calibrated is not True:

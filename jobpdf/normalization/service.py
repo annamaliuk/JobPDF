@@ -97,10 +97,10 @@ class NormalizationService:
         return self._versions
 
     def normalize_skills(
-        self, raws: Sequence[str], context: str | None = None
+        self, raws: Sequence[str], context: str | None = None, *, use_llm: bool = True
     ) -> list[SkillMatch]:
-        """One SkillMatch per input, in input order."""
-        return self._matcher.match_many(list(raws), context)
+        """One SkillMatch per input, in input order. ``use_llm=False``: exact and vector only."""
+        return self._matcher.match_many(list(raws), context, use_llm=use_llm)
 
     def normalize_skill_groups(
         self, groups: Mapping[str, Sequence[str]], context: str | None = None

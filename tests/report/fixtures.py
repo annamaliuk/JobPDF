@@ -25,9 +25,12 @@ from jobpdf.api.response import (
     WithinReach,
 )
 from jobpdf.normalization.service import ServiceVersions
-from jobpdf.ranking.score import THRESHOLDS, Band
+from jobpdf.ranking.score import Band
 
 TODAY = date(2026, 10, 16)
+
+# The thresholds this (unwired) report reads, from before JM-56 moved bands to the fit.
+OLD_THRESHOLDS = {"strong_coverage": 0.8, "partial_coverage": 0.5, "sem_min": 0.3}
 
 
 def skill(name: str, label: str | None = None, *, recognised: bool = True,
@@ -94,7 +97,7 @@ def response(*, matches: list[MatchOut] | None = None, prof: ProfileOut | None =
         hidden_count=hidden,
         insights=insights or Insights(),
         scoring=Scoring(scorer="linear", weights=weights or {"skill": 0.7, "semantic": 0.3},
-                        thresholds=dict(THRESHOLDS), semantic_calibrated=True),
+                        thresholds=dict(OLD_THRESHOLDS), semantic_calibrated=True),
         warnings=warnings or [],
         versions=Versions(response_schema="1",
                           extraction=ExtractionVersions(prompt="p", model="m",

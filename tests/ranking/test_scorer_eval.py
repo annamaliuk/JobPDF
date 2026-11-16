@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from jobpdf.ranking.learned import FeedbackRow, LearnedLinearScorer, NotEnoughData
+from jobpdf.ranking.learned import PRIOR_SKILL, FeedbackRow, LearnedLinearScorer, NotEnoughData
 from jobpdf.ranking.score import Band, LinearScorer
 from jobpdf.ranking.scorer_eval import (
     INCONCLUSIVE,
@@ -129,7 +129,7 @@ def test_the_learned_scorer_wins_when_the_prior_is_wrong() -> None:
 
 
 def test_no_difference_is_reported_as_inconclusive_when_the_prior_is_right() -> None:
-    data = make_feedback(0.7, sessions=100, per_session=12, seed=1)
+    data = make_feedback(PRIOR_SKILL, sessions=100, per_session=12, seed=1)
 
     result = compare_scorers(data)
 

@@ -9,6 +9,7 @@ from jobpdf.ranking import learned
 from jobpdf.ranking.learned import (
     LEARNED,
     LINEAR,
+    PRIOR_SKILL,
     SCORER_ENV,
     UNKNOWN_SCORER,
     WEIGHTS_ENV,
@@ -67,7 +68,7 @@ def test_fit_recovers_the_weight_the_labels_were_made_with(rows: list[FeedbackRo
 
     assert abs(summary.w_skill - 0.2) <= 0.08
     assert summary.informative
-    assert summary.log_loss < summary.log_loss_prior  # better than the 0.7/0.3 prior
+    assert summary.log_loss < summary.log_loss_prior  # better than the hand-set prior
     assert (summary.n_rows, summary.n_skipped) == (1200, 0)
 
 
@@ -80,7 +81,7 @@ def test_weights_are_two_decimals_and_add_up_to_one(rows: list[FeedbackRow]) -> 
 
 
 def test_a_strong_prior_wins_and_no_prior_follows_the_data(rows: list[FeedbackRow]) -> None:
-    assert fit_weights(rows, prior_strength=1e6).w_skill == 0.7
+    assert fit_weights(rows, prior_strength=1e6).w_skill == PRIOR_SKILL == 0.47
     assert fit_weights(rows, prior_strength=0.0).w_skill < 0.3
 
 
@@ -90,7 +91,7 @@ def test_little_data_is_pulled_toward_the_prior() -> None:
     free = fit_weights(few, prior_strength=0.0).w_skill
     shrunk = fit_weights(few).w_skill
 
-    assert free < shrunk < 0.7
+    assert free < shrunk < PRIOR_SKILL
 
 
 def test_feedback_that_works_against_the_score_keeps_the_prior(rows: list[FeedbackRow]) -> None:
@@ -100,7 +101,7 @@ def test_feedback_that_works_against_the_score_keeps_the_prior(rows: list[Feedba
 
     assert not summary.informative
     assert summary.slope == 0.0
-    assert summary.w_skill == 0.7
+    assert summary.w_skill == PRIOR_SKILL
 
 
 def test_rows_missing_a_score_are_skipped_and_counted(rows: list[FeedbackRow]) -> None:
@@ -172,22 +173,24 @@ def test_learned_scorer_is_a_linear_scorer_with_its_own_name_and_weights() -> No
 
     assert isinstance(scorer, LinearScorer)
     assert scorer.name == "learned_linear"
-    assert scorer.weights == {"skill": 0.2, "semantic": 0.8}
+    # the years keep their 15%; the learned 0.2 : 0.8 split shares the rest
+    assert scorer.weights == {"skill": 0.17, "semantic": 0.68, "experience": 0.15}
     assert scorer.score(components(skill=0.5, semantic=1.0)) == pytest.approx(0.9)
 
 
 def test_missing_part_falls_back_exactly_like_the_linear_scorer() -> None:
     learned_scorer, linear = LearnedLinearScorer(0.2, 0.8), LinearScorer()
 
-    for c in (components(skill=0.4), components(semantic=0.6), components()):
-        assert learned_scorer.score(c) == linear.score(c)
+    for c in (components(skill=0.4), components(semantic=0.6)):
+        assert learned_scorer.score(c) == pytest.approx(linear.score(c))
+    assert learned_scorer.score(components()) is None
 
 
 def test_other_weights_can_flip_an_order() -> None:
     a, b = components(skill=0.9, semantic=0.1), components(skill=0.5, semantic=0.9)
 
-    assert LinearScorer().score(a) > LinearScorer().score(b)
-    assert LearnedLinearScorer(0.2, 0.8).score(a) < LearnedLinearScorer(0.2, 0.8).score(b)
+    assert LinearScorer().score(a) < LinearScorer().score(b)
+    assert LearnedLinearScorer(0.9, 0.1).score(a) > LearnedLinearScorer(0.9, 0.1).score(b)
 
 
 def test_weights_that_do_not_add_up_are_rejected() -> None:
@@ -202,7 +205,7 @@ def test_ranking_result_says_which_scorer_ran() -> None:
                             scorer=LearnedLinearScorer(0.2, 0.8))
 
     assert result.scorer_name == "learned_linear"
-    assert result.weights == {"skill": 0.2, "semantic": 0.8}
+    assert result.weights == {"skill": 0.17, "semantic": 0.68, "experience": 0.15}
 
 
 # --- the weights file --------------------------------------------------------------
@@ -212,7 +215,8 @@ def test_weights_file_round_trip_and_provenance(weights_file: Path, rows) -> Non
     stored = json.loads(weights_file.read_text(encoding="utf-8"))
     scorer = load_learned_scorer(weights_file, calibration=CAL)
 
-    assert scorer.weights == stored["weights"]
+    assert scorer.weights == {**{k: round(w * 0.85, 4) for k, w in stored["weights"].items()},
+                              "experience": 0.15}
     assert stored["n_rows"] == len(rows) and stored["dataset_sha256"] == "abc"
     assert stored["calibration_fingerprint"] == calibration_fingerprint(CAL)
     assert stored["log_loss"] < stored["log_loss_prior"]
@@ -288,7 +292,7 @@ def test_flag_is_off_by_default_even_when_valid_weights_exist(
     scorer = select_scorer(calibration=CAL)
 
     assert type(scorer) is LinearScorer
-    assert scorer.weights == {"skill": 0.7, "semantic": 0.3}
+    assert scorer.weights == {"skill": 0.40, "semantic": 0.45, "experience": 0.15}
 
 
 def test_the_default_weights_path_is_used_when_the_flag_is_on(

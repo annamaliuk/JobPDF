@@ -4,6 +4,7 @@ JM-25's synthetic set with no network, model or API key."""
 import importlib.util
 import json
 import math
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,12 +12,16 @@ import pytest
 
 from jobpdf.normalization.text import normalize
 from jobpdf.ranking.ranking_eval import (
+    BEFORE,
+    BEFORE_WEIGHTS,
     CURRENT,
+    CURRENT_WEIGHTS,
     TFIDF,
     Variant,
     bootstrap_mean_ci,
     build_pairs,
     by_candidate,
+    coverage_band,
     decide,
     evaluate_candidate,
     grouped_folds,
@@ -25,11 +30,12 @@ from jobpdf.ranking.ranking_eval import (
     ndcg_graded,
     roc_auc,
     run_evaluation,
+    score_pair,
     sign_test_p,
     tfidf_similarities,
     tune,
 )
-from jobpdf.ranking.score import W_SKILL
+from jobpdf.ranking.score import assign_band, skill_coverage
 from jobpdf.ranking.synthetic import generate, truth_key
 from jobpdf.ranking.synthetic_catalog import SKILLS
 from tests.normalization.fakes import FakeEmbedder
@@ -121,17 +127,32 @@ def test_decide_changes_only_when_the_interval_is_above_zero() -> None:
 def test_product_order_puts_bands_first(perfect) -> None:
     groups = by_candidate(perfect)
     pairs = next(iter(groups.values()))
-    result = evaluate_candidate(pairs, Variant(CURRENT, W_SKILL))
+    result = evaluate_candidate(pairs, Variant(CURRENT, CURRENT_WEIGHTS))
     order = {"strong": 0, "partial": 1, "weak": 2}
     ranks = [order[b] for b in result.predicted_bands]
     assert ranks == sorted(ranks)
     assert result.spearman is not None and result.ndcg is not None
 
 
+def test_before_and_current_use_their_own_formula_and_band_rule(perfect) -> None:
+    asked = [p for p in perfect if p.experience is not None and p.overlap.score is not None]
+    assert asked and all(0 <= p.experience <= 1 for p in asked)
+    pair = replace(min(asked, key=lambda p: p.experience), semantic=0.5)
+    skill, years = pair.overlap.score, pair.experience
+
+    fit, band = score_pair(pair, Variant(BEFORE, BEFORE_WEIGHTS, coverage_bands=True))
+    assert fit == pytest.approx(0.9 * (0.7 * skill + 0.3 * 0.5) + 0.1 * years)
+    assert band is coverage_band(pair.overlap, 0.5)
+
+    fit, band = score_pair(pair, Variant(CURRENT, CURRENT_WEIGHTS))
+    assert fit == pytest.approx(0.40 * skill + 0.45 * 0.5 + 0.15 * years)
+    assert band is assign_band(fit, skill_coverage(pair.overlap))[0]
+
+
 def test_tune_picks_the_variant_that_wins_on_training_candidates(perfect) -> None:
     groups = by_candidate(perfect)
-    held_out, chosen = tune(groups, [Variant(TFIDF, None, False, False),
-                                     Variant(CURRENT, W_SKILL)])
+    held_out, chosen = tune(groups, [Variant(TFIDF, None, use_bands=False),
+                                     Variant(CURRENT, CURRENT_WEIGHTS)])
     assert chosen == [CURRENT] * 5
     assert len(held_out) == len(groups)
 
@@ -139,7 +160,7 @@ def test_tune_picks_the_variant_that_wins_on_training_candidates(perfect) -> Non
 def test_taxonomy_helps_the_alias_only_candidate(dataset, perfect) -> None:
     raw = build_pairs(dataset, "raw")
     [cid] = [c for c, t in dataset.truth.candidates.items() if t.trap == "alias_only"]
-    variant = Variant(CURRENT, W_SKILL)
+    variant = Variant(CURRENT, CURRENT_WEIGHTS)
     with_truth = evaluate_candidate(by_candidate(perfect)[cid], variant).spearman
     without = evaluate_candidate(by_candidate(raw)[cid], variant).spearman
     assert with_truth > without
@@ -183,8 +204,8 @@ def test_a_full_run_with_a_fake_embedder_reports_every_variant(dataset) -> None:
     report = run_evaluation(pairs)
 
     assert report["has_semantic"] and report["semantic_auc"] is not None
-    assert {"current", "skills_only", "semantic_only", "fit_order", "tfidf"} <= set(
-        report["variants"])
+    assert {"current", "before", "coverage_bands", "skills_only", "semantic_only",
+            "fit_order", "tfidf"} <= set(report["variants"])
     assert report["variants"]["semantic_only"]["spearman"]["mean"] != (
         report["variants"]["skills_only"]["spearman"]["mean"])
     assert report["oracle_spearman"] >= report["variants"]["current"]["spearman"]["mean"]
@@ -231,3 +252,20 @@ def test_script_refuses_real_mode_without_the_index(
     assert code == 2
     assert "skill index" in capsys.readouterr().err
     assert not results.exists()
+
+
+def test_the_calibration_export_writes_grade_3_and_grade_0_pairs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "export_calibration_pairs", ROOT / "scripts" / "export_calibration_pairs.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    out = tmp_path / "pairs.json"
+
+    assert module.main(["--out", str(out)]) == 0
+
+    pairs = json.loads(out.read_text(encoding="utf-8"))["pairs"]
+    assert (len(pairs), sum(p["related"] for p in pairs)) == (693, 43)  # grades 3 and 0
+    assert all(p["cv_text"] and p["vacancy_text"] for p in pairs)
+    assert capsys.readouterr().out == "written 693 pairs: 43 related, 650 unrelated\n"
